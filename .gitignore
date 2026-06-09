@@ -1,0 +1,20 @@
+# deps / build
+node_modules/
+dist/
+
+# runtime data (uploads, generated audio, PDFs, audit packs)
+data/
+
+# env & secrets
+.env
+.env.local
+.env.*.local
+
+# eval outputs (the eval *sets* are committed; results are not)
+evals/results-*.json
+
+# logs / misc
+*.log
+.DS_Store
+.pnpm-store/
+coverage/

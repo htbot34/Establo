@@ -1,0 +1,77 @@
+{
+  "name": "establo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Spanish-first WhatsApp training assistant for dairy operations",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,green \"tsx watch src/server/index.ts\" \"vite\"",
+    "build": "vite build",
+    "start": "tsx src/server/index.ts",
+    "migrate": "tsx src/server/db/migrate.ts",
+    "seed": "tsx src/server/seed/index.ts",
+    "ask": "tsx scripts/ask.ts",
+    "eval": "tsx scripts/run-eval.ts",
+    "generate-eval": "tsx scripts/generate-eval.ts",
+    "sample-image": "tsx scripts/make-sample-sop-image.ts",
+    "test": "vitest run",
+    "test:unit": "vitest run --exclude 'tests/integration/**'",
+    "typecheck": "tsc --noEmit"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "argon2",
+      "esbuild",
+      "ffmpeg-static"
+    ]
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.104.0",
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/formbody": "^8.0.2",
+    "@fastify/multipart": "^10.0.0",
+    "@fastify/static": "^9.1.3",
+    "archiver": "^8.0.0",
+    "argon2": "^0.44.0",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
+    "fastify": "^5.8.5",
+    "ffmpeg-static": "^5.3.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "luxon": "^3.7.2",
+    "mammoth": "^1.12.0",
+    "openai": "^6.42.0",
+    "pdf-parse": "1.1.1",
+    "pdfkit": "^0.19.0",
+    "pg": "^8.21.0",
+    "pg-boss": "^10.4.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.4",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/archiver": "^8.0.0",
+    "@types/fluent-ffmpeg": "^2.1.28",
+    "@types/luxon": "^3.7.1",
+    "@types/node": "^25.9.2",
+    "@types/pdfkit": "^0.17.6",
+    "@types/pg": "^8.20.0",
+    "@types/pngjs": "^6.0.5",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.7.0",
+    "autoprefixer": "^10.5.0",
+    "concurrently": "^10.0.3",
+    "pngjs": "^7.0.0",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^3.4.19",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "vite": "^5.4.21",
+    "vitest": "^2.1.9"
+  }
+}

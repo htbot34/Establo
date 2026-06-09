@@ -1,0 +1,20 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: establo-db
+    environment:
+      POSTGRES_USER: establo
+      POSTGRES_PASSWORD: establo
+      POSTGRES_DB: establo
+    ports:
+      - "5432:5432"
+    volumes:
+      - establo-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U establo -d establo"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  establo-pgdata:
