@@ -1,13 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../api';
+import { api, IS_DEMO } from '../api';
 import { useAuth } from '../auth';
 import { Button, ErrorNote, Input, Label } from '../components';
 
 export default function Login() {
   const [tab, setTab] = useState<'login' | 'setup'>('login');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState(IS_DEMO ? 'demo@establo.app' : '');
+  const [password, setPassword] = useState(IS_DEMO ? 'establo-demo-2026' : '');
   const [orgName, setOrgName] = useState('');
   const [name, setName] = useState('');
   const [timezone, setTimezone] = useState('America/Boise');

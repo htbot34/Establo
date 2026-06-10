@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, fmtDate, fmtDateTime } from '../api';
+import { api, fmtDate, fmtDateTime, IS_DEMO } from '../api';
 import {
   Button,
   Card,
@@ -90,6 +90,12 @@ export default function Audit() {
           their training dates, topics and check results · the full training-events CSV ·
           per-worker transcript PDFs — all zipped together.
         </p>
+        {IS_DEMO && (
+          <p className="mt-2 text-xs font-medium text-amber-700">
+            Hosted demo: the CSV is generated right here in your browser; the letter PDF and
+            transcripts zip are produced by the real backend (run locally to see them).
+          </p>
+        )}
       </Card>
 
       <Card>
@@ -121,9 +127,18 @@ export default function Audit() {
                   <td className="px-3 py-3 text-right">
                     {r.status === 'ready' ? (
                       <div className="flex justify-end gap-3 text-xs font-medium">
-                        <a className="text-green-800 hover:underline" href={`${r.letterUrl}?download`}>Letter PDF</a>
-                        <a className="text-green-800 hover:underline" href={`${r.csvUrl}?download`}>CSV</a>
-                        <a className="text-green-800 hover:underline" href={`${r.downloadUrl}?download`}>Full pack (zip)</a>
+                        {r.letterUrl && (
+                          <a className="text-green-800 hover:underline" href={IS_DEMO ? r.letterUrl : `${r.letterUrl}?download`}>Letter PDF</a>
+                        )}
+                        {r.csvUrl && (
+                          <a className="text-green-800 hover:underline" href={IS_DEMO ? r.csvUrl : `${r.csvUrl}?download`} download={IS_DEMO ? 'training-events.csv' : undefined}>CSV</a>
+                        )}
+                        {r.downloadUrl && (
+                          <a className="text-green-800 hover:underline" href={IS_DEMO ? r.downloadUrl : `${r.downloadUrl}?download`}>Full pack (zip)</a>
+                        )}
+                        {IS_DEMO && !r.letterUrl && (
+                          <span className="text-stone-400">PDF/zip: backend only</span>
+                        )}
                       </div>
                     ) : (
                       <span className="text-xs text-stone-400">—</span>

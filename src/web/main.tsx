@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { createBrowserRouter, createHashRouter, RouterProvider } from 'react-router-dom';
+import { IS_DEMO } from './api';
 import { AuthProvider } from './auth';
 import Layout from './Layout';
 import Login from './pages/Login';
@@ -16,28 +17,31 @@ import Settings from './pages/Settings';
 import Simulator from './pages/Simulator';
 import './styles.css';
 
-const router = createBrowserRouter(
-  [
-    { path: '/login', element: <Login /> },
-    {
-      path: '/',
-      element: <Layout />,
-      children: [
-        { index: true, element: <Overview /> },
-        { path: 'sops', element: <Sops /> },
-        { path: 'workers', element: <Workers /> },
-        { path: 'workers/:id', element: <WorkerDetail /> },
-        { path: 'onboarding', element: <Onboarding /> },
-        { path: 'onboarding/:trackId', element: <TrackEditor /> },
-        { path: 'conversations', element: <Conversations /> },
-        { path: 'audit', element: <Audit /> },
-        { path: 'settings', element: <Settings /> },
-        { path: 'simulator', element: <Simulator /> },
-      ],
-    },
-  ],
-  { basename: '/app' },
-);
+const routes = [
+  { path: '/login', element: <Login /> },
+  {
+    path: '/',
+    element: <Layout />,
+    children: [
+      { index: true, element: <Overview /> },
+      { path: 'sops', element: <Sops /> },
+      { path: 'workers', element: <Workers /> },
+      { path: 'workers/:id', element: <WorkerDetail /> },
+      { path: 'onboarding', element: <Onboarding /> },
+      { path: 'onboarding/:trackId', element: <TrackEditor /> },
+      { path: 'conversations', element: <Conversations /> },
+      { path: 'audit', element: <Audit /> },
+      { path: 'settings', element: <Settings /> },
+      { path: 'simulator', element: <Simulator /> },
+    ],
+  },
+];
+
+// Hash routing on GitHub Pages (static host, no SPA fallback); normal
+// history routing under /app when served by the Fastify backend.
+const router = IS_DEMO
+  ? createHashRouter(routes)
+  : createBrowserRouter(routes, { basename: '/app' });
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

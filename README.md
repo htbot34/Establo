@@ -2,6 +2,12 @@
 
 **Spanish-first, WhatsApp-based training assistant for large dairy operations.**
 
+> **▶ Live demo (no install):** https://htbot34.github.io/Establo/ — the real
+> dashboard UI + WhatsApp simulator running entirely in your browser on sample
+> data (deployed from `main` by GitHub Actions). It's static, so answers there
+> are verbatim SOP extracts and PDFs/uploads are disabled; the full
+> Claude-powered system is the 5-command quickstart below.
+
 Workers text or send a voice note to a WhatsApp number and get answers grounded
 ONLY in their dairy's own uploaded SOPs, with citations. New hires receive
 scheduled onboarding lessons with one-question comprehension checks. Every

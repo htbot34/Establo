@@ -1,4 +1,5 @@
 import { NavLink, Outlet, Navigate } from 'react-router-dom';
+import { IS_DEMO } from './api';
 import { useAuth } from './auth';
 import { Spinner } from './components';
 
@@ -18,12 +19,28 @@ export default function Layout() {
   if (!me) return <Navigate to="/login" replace />;
 
   const nav = [...NAV];
-  if (runMode === 'mock') {
+  if (runMode === 'mock' || runMode === 'demo') {
     nav.push({ to: '/simulator', label: 'Simulator', icon: '📱' });
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen flex-col">
+      {IS_DEMO && (
+        <div className="z-10 bg-amber-100 px-4 py-1.5 pl-60 text-center text-xs text-amber-900">
+          <strong>Hosted demo</strong> — sample dairy, data resets on reload. Answers here are
+          verbatim SOP extracts; the full system answers with Claude, voice notes, and real
+          WhatsApp.{' '}
+          <a
+            className="font-semibold underline"
+            href="https://github.com/htbot34/Establo#readme"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Run the real thing →
+          </a>
+        </div>
+      )}
+      <div className="flex flex-1">
       <aside className="fixed inset-y-0 flex w-56 flex-col border-r border-stone-200 bg-white">
         <div className="flex items-center gap-2 px-5 py-5">
           <span className="text-2xl">🐄</span>
@@ -67,11 +84,12 @@ export default function Layout() {
           </button>
         </div>
       </aside>
-      <main className="ml-56 flex-1 px-8 py-8">
-        <div className="mx-auto max-w-5xl">
-          <Outlet />
-        </div>
-      </main>
+        <main className="ml-56 flex-1 px-8 py-8">
+          <div className="mx-auto max-w-5xl">
+            <Outlet />
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

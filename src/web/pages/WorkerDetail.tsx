@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { api, fmtDate, fmtDateTime, timeAgo } from '../api';
+import { api, fmtDate, fmtDateTime, IS_DEMO, timeAgo } from '../api';
 import {
   Badge,
   Button,
@@ -110,9 +110,11 @@ export default function WorkerDetail() {
         subtitle={`${data.phoneE164} · hired ${fmtDate(data.hiredAt)} · last active ${timeAgo(data.lastInboundAt)}`}
         actions={
           <>
-            <a href={`/api/workers/${data.id}/transcript.pdf`}>
-              <Button variant="secondary">Download transcript PDF</Button>
-            </a>
+            {!IS_DEMO && (
+              <a href={`/api/workers/${data.id}/transcript.pdf`}>
+                <Button variant="secondary">Download transcript PDF</Button>
+              </a>
+            )}
             <Button onClick={() => setEnrolling(true)}>Enroll in track</Button>
           </>
         }

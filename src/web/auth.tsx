@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { api, type Me } from './api';
+import { api, IS_DEMO, type Me } from './api';
 
 interface AuthState {
   me: Me | null;
@@ -42,11 +42,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     await api('/api/auth/logout', { method: 'POST' });
     setMe(null);
-    window.location.href = '/app/login';
+    if (!IS_DEMO) window.location.href = '/app/login';
   }, []);
 
   useEffect(() => {
     void refresh();
+    if (IS_DEMO) {
+      setRunMode('demo');
+      return;
+    }
     fetch('/healthz')
       .then((r) => r.json())
       .then((h: { mode?: string }) => setRunMode(h.mode ?? 'mock'))

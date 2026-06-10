@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, fmtDate } from '../api';
+import { api, fmtDate, IS_DEMO } from '../api';
 import {
   Button,
   Card,
@@ -83,10 +83,17 @@ export default function Sops() {
       />
       <ErrorNote error={error} />
 
+      {IS_DEMO && (
+        <Card className="mb-5 border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          Document upload and OCR run on the real backend — this hosted demo ships with the five
+          sample SOPs below (browse their extracted chunks with “View text”). Clone the repo and
+          run <code className="rounded bg-amber-100 px-1">pnpm dev</code> to ingest your own.
+        </Card>
+      )}
       <Card
         className={`mb-5 border-2 border-dashed p-8 text-center transition-colors ${
           dragOver ? 'border-green-700 bg-green-50' : 'border-stone-300'
-        }`}
+        } ${IS_DEMO ? 'hidden' : ''}`}
       >
         <div
           onDragOver={(e) => {

@@ -10,6 +10,8 @@
   "scripts": {
     "dev": "concurrently -n server,web -c blue,green \"tsx watch src/server/index.ts\" \"vite\"",
     "build": "vite build",
+    "build:demo": "VITE_DEMO=1 vite build --base=./ --outDir=../../dist/demo --emptyOutDir",
+    "export-demo-fixture": "tsx scripts/export-demo-fixture.ts",
     "start": "tsx src/server/index.ts",
     "migrate": "tsx src/server/db/migrate.ts",
     "seed": "tsx src/server/seed/index.ts",

@@ -7,6 +7,9 @@ export class ApiError extends Error {
   }
 }
 
+/** Static GitHub Pages build: all API calls served by the in-browser mock. */
+export const IS_DEMO = import.meta.env.VITE_DEMO === '1';
+
 function csrfToken(): string {
   const match = document.cookie.match(/(?:^|;\s*)establo_csrf=([^;]+)/);
   return match ? decodeURIComponent(match[1]) : '';
@@ -16,6 +19,10 @@ export async function api<T>(
   path: string,
   opts: { method?: string; body?: unknown } = {},
 ): Promise<T> {
+  if (IS_DEMO) {
+    const { demoFetch } = await import('./demo/demoApi');
+    return demoFetch(path, opts) as Promise<T>;
+  }
   const method = opts.method ?? 'GET';
   const headers: Record<string, string> = {};
   if (method !== 'GET') headers['x-csrf-token'] = csrfToken();
