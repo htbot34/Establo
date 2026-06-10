@@ -1,0 +1,115 @@
+import { useEffect, useState, type FormEvent } from 'react';
+import { api } from '../api';
+import { useAuth } from '../auth';
+import { Badge, Button, Card, ErrorNote, Input, Label, PageHeader } from '../components';
+
+interface BillingStatus {
+  enabled: boolean;
+  billing: { active?: boolean };
+}
+
+export default function Settings() {
+  const { me, refresh, runMode } = useAuth();
+  const [name, setName] = useState('');
+  const [timezone, setTimezone] = useState('');
+  const [herdSize, setHerdSize] = useState('');
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [billing, setBilling] = useState<BillingStatus | null>(null);
+
+  useEffect(() => {
+    if (me) {
+      setName(me.org.name);
+      setTimezone(me.org.timezone);
+      setHerdSize(me.org.herdSize ? String(me.org.herdSize) : '');
+    }
+  }, [me]);
+  useEffect(() => {
+    void api<BillingStatus>('/api/billing/status').then(setBilling).catch(() => {});
+  }, []);
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSaved(false);
+    try {
+      await api('/api/org', {
+        method: 'PATCH',
+        body: { name, timezone, herdSize: herdSize ? Number(herdSize) : null },
+      });
+      await refresh();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function checkout() {
+    setError(null);
+    try {
+      const { url } = await api<{ url: string }>('/api/billing/checkout', { method: 'POST' });
+      window.location.href = url;
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  return (
+    <div>
+      <PageHeader title="Settings" subtitle="Organization details and billing" />
+      <ErrorNote error={error} />
+
+      <Card className="mb-4 max-w-xl p-5">
+        <h2 className="mb-4 text-sm font-semibold text-stone-700">Organization</h2>
+        <form onSubmit={(e) => void save(e)} className="space-y-3">
+          <div>
+            <Label>Dairy name</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} required />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Timezone (drip schedule uses this)</Label>
+              <Input value={timezone} onChange={(e) => setTimezone(e.target.value)} required />
+            </div>
+            <div>
+              <Label>Herd size (cows)</Label>
+              <Input type="number" min={1} value={herdSize} onChange={(e) => setHerdSize(e.target.value)} />
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button type="submit">Save</Button>
+            {saved && <span className="text-sm text-green-700">Saved ✓</span>}
+          </div>
+        </form>
+      </Card>
+
+      <Card className="mb-4 max-w-xl p-5">
+        <h2 className="mb-2 text-sm font-semibold text-stone-700">Run mode</h2>
+        <p className="text-sm text-stone-600">
+          This server is running in <Badge color={runMode === 'production' ? 'green' : 'amber'}>{runMode}</Badge>{' '}
+          mode. See the README for the path from mock → sandbox → production.
+        </p>
+      </Card>
+
+      {billing?.enabled && (
+        <Card className="max-w-xl p-5">
+          <h2 className="mb-2 text-sm font-semibold text-stone-700">Billing</h2>
+          {billing.billing.active ? (
+            <p className="text-sm text-stone-600">
+              Subscription <Badge color="green">active</Badge> — base fee + per-cow pricing.
+            </p>
+          ) : (
+            <div>
+              <p className="mb-3 text-sm text-stone-600">
+                No active subscription. Establo bills a flat base fee plus a per-cow amount
+                (your herd size: {me?.org.herdSize ?? '—'} cows).
+              </p>
+              <Button onClick={() => void checkout()}>Set up billing with Stripe</Button>
+            </div>
+          )}
+        </Card>
+      )}
+    </div>
+  );
+}

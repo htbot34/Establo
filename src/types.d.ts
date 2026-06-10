@@ -1,3 +1,5 @@
+declare module '*.css';
+
 declare module 'pdf-parse/lib/pdf-parse.js' {
   interface PdfParseResult {
     text: string;
