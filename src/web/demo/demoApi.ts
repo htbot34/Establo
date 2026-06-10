@@ -76,7 +76,7 @@ function norm(text: string): string {
     .replace(/[^a-z0-9ñ\s]/g, ' ');
 }
 const STOP = new Set(
-  'el la los las un una de del al a en y o u que se su sus con por para como es son fue ser estar esta este esto hay si no mas pero cuando donde cual cuales quien debe deben cada lo le mi tu'.split(' '),
+  'el la los las un una de del al a en y o u que se su sus con por para como es son fue ser estar esta este esto hay si no mas pero cuando donde cual cuales quien debe deben cada lo le mi tu sale'.split(' '),
 );
 function tokens(text: string): string[] {
   return norm(text)
@@ -84,12 +84,31 @@ function tokens(text: string): string[] {
     .filter((w) => w.length > 1 && !STOP.has(w));
 }
 function scoreChunk(qTokens: string[], chunk: Row): number {
-  const hay = norm(`${chunk.headingPath} ${chunk.content}`);
+  const heading = norm(chunk.headingPath);
+  const hay = `${heading} ${norm(chunk.content)}`;
   const hayTokens = new Set(hay.split(/\s+/));
   let score = 0;
+  const unmatched = new Set(qTokens);
   for (const t of qTokens) {
     if (hayTokens.has(t)) score += 2;
     else if (t.length >= 5 && hay.includes(t.slice(0, 5))) score += 0.7; // stem-ish
+    else continue;
+    unmatched.delete(t);
+  }
+  // Heading words are the strongest relevance signal (they become the
+  // citation). When a query token reaches a heading word only through a
+  // shared 4-char stem ("lavar" → "Lavado") the loop above misses it, so
+  // credit each such heading word — but never double-count tokens the text
+  // already matched, which would let an incidental heading word (e.g.
+  // "Equipo de protección") outrank the chunk that answers the question.
+  for (const h of heading.split(/\s+/)) {
+    if (h.length < 5) continue;
+    for (const t of unmatched) {
+      if (t.length >= 5 && t.slice(0, 4) === h.slice(0, 4)) {
+        score += 0.5;
+        break;
+      }
+    }
   }
   return qTokens.length ? score / qTokens.length : 0;
 }
