@@ -41,6 +41,7 @@ password: establo-demo-2026
 
 Then open **Simulator** in the sidebar and play the worker:
 
+- *"¿qué hago si una vaca tiene mastitis?"* → grounded answer citing the mastitis SOP
 - *"¿cuánto tiempo dejo el pre-dip?"* → grounded answer with `📄 Fuente:` citation
 - Switch to 🎤 voice-note mode → the reply includes a playable audio answer
 - *"¿me puedes subir el sueldo?"* → polite refusal + escalation (see Conversations → Escalations)
@@ -55,7 +56,7 @@ answers; that is the expected dev setup. Useful commands:
 ```bash
 pnpm ask "¿cuánto tiempo dejo el pre-dip?"   # retrieval+answer smoke test (CLI)
 pnpm eval                                     # run the eval set, print scorecard
-pnpm test                                     # 54 unit + integration tests
+pnpm test                                     # 68 unit + integration tests
 pnpm sample-image                             # regenerate samples/sop-photo-sample.png
 ```
 
@@ -168,7 +169,7 @@ pnpm eval            # runs the full pipeline per question + grades + scorecard
 Targets printed by the scorecard: **≥85% grounded-correct**, **≥90% correct
 refusal** on the unanswerable set, **0 fabricated citations**. With keys,
 Claude is the grader (LLM-as-judge, `prompts/eval-grade.md`); without keys it
-falls back to the committed 26-case starter set and a heuristic grader so the
+falls back to the committed 29-case starter set and a heuristic grader so the
 harness always runs — those numbers exercise plumbing, not quality.
 
 ## Security & guardrails

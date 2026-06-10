@@ -115,3 +115,81 @@ describe('static demo in-browser API', () => {
     ).rejects.toThrowError(/Claude/);
   });
 });
+
+/**
+ * The exact questions from the README script and the simulator's "Prueba:"
+ * hint — what industry reviewers will type into the hosted demo. Each
+ * mapping here is a promise the static demo must keep.
+ */
+describe('reviewer demo script — retrieval and routing', () => {
+  beforeEach(() => resetDemoStore());
+
+  async function ask(text: string): Promise<SimMessage> {
+    const maria = await workerByName('María');
+    await demoFetch('/api/simulator/inbound', {
+      method: 'POST',
+      body: { workerId: maria.id, kind: 'text', text },
+    });
+    const [reply] = await lastMessages(maria.id, 1);
+    return reply;
+  }
+
+  it('mastitis question → the new mastitis SOP, not "Rutina de ordeño > Secado"', async () => {
+    const reply = await ask('¿qué hago si una vaca tiene mastitis?');
+    expect(reply.bodyText).toContain('📄 Fuente: Detección y manejo de mastitis');
+    expect(reply.bodyText).toContain('Avisa al encargado');
+    expect(reply.bodyText).not.toContain('Secado');
+  });
+
+  it('wash-temperature question → a CIP cycle chunk that contains the temperatures', async () => {
+    const reply = await ask('¿a qué temperatura debe estar el agua para lavar el equipo?');
+    expect(reply.bodyText).toContain('📄 Fuente: Limpieza de la sala de ordeño (CIP)');
+    expect(reply.bodyText).toContain('71 a 77');
+  });
+
+  it('pre-dip question → the 30-segundos pre-dip chunk', async () => {
+    const reply = await ask('¿cuánto tiempo dejo el pre-dip?');
+    expect(reply.bodyText).toContain('30 segundos');
+    expect(reply.bodyText).toContain('📄 Fuente: Rutina de ordeño — Rutina de ordeño > Pre-dip');
+  });
+
+  it('salary question → refusal + escalation, never a citation', async () => {
+    const before = (await demoFetch('/api/escalations')).length;
+    const reply = await ask('¿me puedes subir el sueldo?');
+    expect(reply.bodyText).toContain('supervisor');
+    expect(reply.bodyText).not.toContain('📄 Fuente');
+    const after = await demoFetch('/api/escalations');
+    expect(after.length).toBe(before + 1);
+    expect(after[0].reason).toContain('Tema restringido');
+  });
+
+  it('greeting → canned greeting, no retrieval', async () => {
+    const reply = await ask('hola');
+    expect(reply.bodyText).toContain('Soy Establo');
+    expect(reply.bodyText).not.toContain('📄 Fuente');
+  });
+
+  it('colostrum question → the 4-litros / 22% Brix chunk', async () => {
+    const reply = await ask('¿cuánto calostro le doy a un becerro recién nacido?');
+    expect(reply.bodyText).toContain('4 litros');
+    expect(reply.bodyText).toContain('22% Brix');
+    expect(reply.bodyText).toContain('📄 Fuente: Cuidado de becerras recién nacidas');
+  });
+
+  it('vet-dosing question about mastitis → refusal, never the mastitis SOP', async () => {
+    const reply = await ask('¿cuánta penicilina le doy a una vaca con mastitis?');
+    expect(reply.bodyText).toContain('supervisor');
+    expect(reply.bodyText).not.toContain('📄 Fuente');
+    const esc = await demoFetch('/api/escalations');
+    expect(esc[0].reason).toContain('Tema restringido');
+  });
+
+  it('the SOPs page lists 6 documents and the mastitis SOP has chunks', async () => {
+    const sops = await demoFetch('/api/sops');
+    expect(sops).toHaveLength(6);
+    const mastitis = sops.find(
+      (d: { title: string }) => d.title === 'Detección y manejo de mastitis',
+    );
+    expect(mastitis.chunkCount).toBeGreaterThan(0);
+  });
+});

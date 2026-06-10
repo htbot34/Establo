@@ -77,7 +77,7 @@ low-literacy worker on WhatsApp**, then write it down here.
   `[STUB]` prefix and a real citation; topic classification falls back to a
   keyword taxonomy; **image OCR ingestion fails cleanly** with a clear error
   (PDF/DOCX/MD still ingest) — pretending to OCR would poison retrieval.
-- `pnpm eval` falls back to the committed 26-case starter set + heuristic
+- `pnpm eval` falls back to the committed 29-case starter set + heuristic
   grader so the harness always runs; `pnpm generate-eval` requires the key.
 
 ## Operational simplifications (single-process assumptions)
@@ -98,6 +98,44 @@ low-literacy worker on WhatsApp**, then write it down here.
 - Feature-flagged off (`ENABLE_BILLING=false`). Stripe Checkout (base fee +
   per-cow quantity) and a signature-verified webhook are implemented with raw
   `fetch` — no SDK — and never required for the product to run.
+
+## Static demo polish for industry review (June 2026)
+
+- **Sixth seed SOP: "Detección y manejo de mastitis".** The most obvious
+  dairy question ("¿qué hago si una vaca tiene mastitis?") used to land on
+  "Rutina de ordeño > Secado". The new SOP contains **zero medication,
+  antibiotic, or dosing content**: it teaches detect → mark → separate →
+  tell the encargado, and states that treatment is decided by the encargado
+  with the veterinario — reinforcing the vet-dosing guard instead of
+  undermining it. Cross-checked mechanically: no `guards.ts` regex matches
+  any line of the SOP.
+- **No 7th onboarding module.** The induction track stays at 6 lessons;
+  mastitis is showcased through live Q&A, which is what reviewers will
+  exercise. Simpler than re-balancing the drip schedule for new hires.
+- **The new SOP's wording is retrieval-aware.** "Señales de alerta" says
+  "los primeros chorros" without the literal word "despunte" (that word
+  stays in the intro), so "¿cuántos chorros saco en el despunte?" keeps
+  resolving to "Rutina de ordeño > Despunte" rather than the mastitis
+  signals chunk.
+- **Demo retrieval scoring (in `demoApi.ts` only; the real pgvector
+  pipeline is untouched).** Heading words now add +0.5 when a query token
+  reaches them only through a shared 4-char stem ("lavar" → "Lavado"), and
+  never for tokens the body text already matched. The guard matters: an
+  unconditional heading bonus let "Equipo de protección personal (EPP)"
+  outrank the CIP wash chunk for "¿a qué temperatura … lavar el equipo?"
+  (the "equipo" homonym) and flipped the cloro+ácido answer away from the
+  chemicals SOP. Also added `sale` to the demo stopword list — "¿qué hago
+  si la leche sale con grumos?" was matching "el agua sale clara" in the
+  CIP rinse chunk.
+- **Silent TTS players become a labeled, non-interactive pill in the hosted
+  demo** (`IS_DEMO` only): "🔊 respuesta de voz — silenciada en este demo
+  (el sistema real envía audio TTS)". A pill rather than a relabeled player
+  so no visitor can press play and hear silence. Mock/sandbox/production
+  keep the real `<audio>` element.
+- Fixture regenerated through the real pipeline (`migrate → seed →
+  export-demo-fixture`) against a local Postgres 16 + pgvector instance
+  (Docker was unavailable in the environment used for this change — same
+  code path, no hand edits to `fixture.json`).
 
 ## Eval targets
 

@@ -24,3 +24,6 @@
 {"id":"s24","question":"¿Cómo arreglo el variador de la bomba de vacío si marca error E03?","answerable":false,"expected_doc":null,"expected_facts":null}
 {"id":"s25","question":"¿Qué papeles necesito para renovar mi visa de trabajo?","answerable":false,"expected_doc":null,"expected_facts":null}
 {"id":"s26","question":"¿Cuál es la receta del queso fresco que hacen en la planta?","answerable":false,"expected_doc":null,"expected_facts":null}
+{"id":"s27","question":"¿Qué hago si una vaca tiene mastitis?","answerable":true,"expected_doc":"Detección y manejo de mastitis","expected_facts":"marcar la vaca con la banda en la pata, su leche no va al tanque, ordeñarla al final o con unidad aparte, avisar al encargado, registrar vaca y cuarto"}
+{"id":"s28","question":"¿Cuáles son las señales de que una vaca trae mastitis?","answerable":true,"expected_doc":"Detección y manejo de mastitis","expected_facts":"grumos o coágulos en los primeros chorros, cuarto hinchado/caliente/duro, leche aguada o con sangre"}
+{"id":"s29","question":"¿Cuánta penicilina le doy a una vaca con mastitis?","answerable":false,"expected_doc":null,"expected_facts":null}
