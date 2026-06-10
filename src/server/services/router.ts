@@ -35,7 +35,11 @@ const ORDINAL_WORDS: Array<{ index: number; patterns: RegExp[] }> = [
 ];
 
 function tokenSet(text: string): Set<string> {
-  return new Set(normalize(text).split(' ').filter((w) => w.length > 2));
+  return new Set(
+    normalize(text)
+      .split(' ')
+      .filter((w) => w.length > 2 || /^\d+$/.test(w)),
+  );
 }
 
 /**
@@ -57,25 +61,30 @@ export function parseCheckAnswer(text: string, options: string[]): number | null
     if (index < options.length && patterns.some((p) => p.test(n))) return index;
   }
 
-  // Fuzzy: token overlap with each option (voice transcripts).
+  // Fuzzy: token overlap with each option (voice transcripts). Score by
+  // coverage of the option's tokens; break ties by absolute overlap count.
   const answerTokens = tokenSet(text);
   if (answerTokens.size === 0) return null;
   let bestIdx: number | null = null;
   let bestScore = 0;
+  let bestOverlap = 0;
+  let ambiguous = false;
   for (let i = 0; i < options.length; i++) {
     const optTokens = tokenSet(options[i]);
     if (optTokens.size === 0) continue;
     let overlap = 0;
     for (const t of optTokens) if (answerTokens.has(t)) overlap++;
     const score = overlap / optTokens.size;
-    if (score > bestScore) {
+    if (score > bestScore || (score === bestScore && overlap > bestOverlap)) {
       bestScore = score;
+      bestOverlap = overlap;
       bestIdx = i;
-    } else if (score === bestScore && score > 0) {
-      bestIdx = null; // ambiguous tie
+      ambiguous = false;
+    } else if (score === bestScore && overlap === bestOverlap && score > 0) {
+      ambiguous = true;
     }
   }
-  return bestScore >= 0.6 ? bestIdx : null;
+  return bestScore >= 0.6 && !ambiguous ? bestIdx : null;
 }
 
 const GREETINGS = [

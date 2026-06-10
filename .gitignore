@@ -18,3 +18,4 @@ evals/results-*.json
 .DS_Store
 .pnpm-store/
 coverage/
+tests/.tmp-storage/

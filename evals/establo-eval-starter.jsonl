@@ -1,0 +1,26 @@
+{"id":"s01","question":"¿Cuánto tiempo debe quedarse el pre-dip en el pezón?","answerable":true,"expected_doc":"Rutina de ordeño","expected_facts":"30 segundos"}
+{"id":"s02","question":"¿Cuántos chorros de leche saco por cuarto en el despunte?","answerable":true,"expected_doc":"Rutina de ordeño","expected_facts":"3 a 4 chorros"}
+{"id":"s03","question":"¿Puedo usar la misma toalla para secar dos vacas?","answerable":true,"expected_doc":"Rutina de ordeño","expected_facts":"no, una toalla por vaca"}
+{"id":"s04","question":"¿Cuándo coloco la unidad de ordeño después de empezar la estimulación?","answerable":true,"expected_doc":"Rutina de ordeño","expected_facts":"entre 60 y 90 segundos"}
+{"id":"s05","question":"¿Qué hago con la leche de una vaca tratada?","answerable":true,"expected_doc":"Rutina de ordeño","expected_facts":"nunca va al tanque, va al descarte"}
+{"id":"s06","question":"¿Cuánto calostro se le da a una becerra recién nacida y en cuánto tiempo?","answerable":true,"expected_doc":"Cuidado de becerras recién nacidas","expected_facts":"4 litros en las primeras 2 horas"}
+{"id":"s07","question":"¿Con qué se desinfecta el ombligo de la becerra?","answerable":true,"expected_doc":"Cuidado de becerras recién nacidas","expected_facts":"yodo al 7%, primera hora, repetir a las 12 horas"}
+{"id":"s08","question":"¿Qué calidad debe tener el calostro en el refractómetro?","answerable":true,"expected_doc":"Cuidado de becerras recién nacidas","expected_facts":"22% Brix o más"}
+{"id":"s09","question":"¿A qué temperatura se descongela el calostro del banco?","answerable":true,"expected_doc":"Cuidado de becerras recién nacidas","expected_facts":"baño maría a no más de 49 °C"}
+{"id":"s10","question":"¿Qué pasa si mezclo cloro con ácido?","answerable":true,"expected_doc":"Manejo y seguridad de químicos","expected_facts":"gas tóxico que puede matar"}
+{"id":"s11","question":"¿Qué equipo de protección me pongo para manejar químicos concentrados?","answerable":true,"expected_doc":"Manejo y seguridad de químicos","expected_facts":"lentes/goggles, guantes de nitrilo gruesos, mandil, botas"}
+{"id":"s12","question":"Si me cae químico en los ojos, ¿cuánto tiempo me enjuago?","answerable":true,"expected_doc":"Manejo y seguridad de químicos","expected_facts":"15 minutos con agua"}
+{"id":"s13","question":"¿Se agrega el agua al químico o el químico al agua?","answerable":true,"expected_doc":"Manejo y seguridad de químicos","expected_facts":"el químico al agua, nunca al revés"}
+{"id":"s14","question":"¿Está permitido usar la chicharra eléctrica para mover vacas?","answerable":true,"expected_doc":"Manejo de animales de bajo estrés","expected_facts":"prohibida en toda la lechería"}
+{"id":"s15","question":"¿Dónde está el punto de balance de la vaca?","answerable":true,"expected_doc":"Manejo de animales de bajo estrés","expected_facts":"en el hombro"}
+{"id":"s16","question":"¿Qué hago con una vaca caída que no se puede parar?","answerable":true,"expected_doc":"Manejo de animales de bajo estrés","expected_facts":"no arrastrarla, avisar al encargado, equipo especial"}
+{"id":"s17","question":"¿A qué temperatura va el primer enjuague del lavado CIP?","answerable":true,"expected_doc":"Limpieza de la sala de ordeño (CIP)","expected_facts":"agua tibia, 35 a 43 °C"}
+{"id":"s18","question":"¿De cuánto a cuánto debe entrar la temperatura del lavado alcalino?","answerable":true,"expected_doc":"Limpieza de la sala de ordeño (CIP)","expected_facts":"71 a 77 °C, no bajar de 49 °C al final"}
+{"id":"s19","question":"¿Cuántos minutos circula el lavado alcalino clorado?","answerable":true,"expected_doc":"Limpieza de la sala de ordeño (CIP)","expected_facts":"8 a 10 minutos"}
+{"id":"s20","question":"¿Qué pH deja el enjuague ácido en las líneas?","answerable":true,"expected_doc":"Limpieza de la sala de ordeño (CIP)","expected_facts":"pH 3.0 a 4.0"}
+{"id":"s21","question":"¿Cada cuántas horas se cambia el filtro de leche del tanque?","answerable":false,"expected_doc":null,"expected_facts":null}
+{"id":"s22","question":"¿Cuál es la dosis de penicilina para una vaca con mastitis?","answerable":false,"expected_doc":null,"expected_facts":null}
+{"id":"s23","question":"¿Me pueden pagar las horas extras de la semana pasada?","answerable":false,"expected_doc":null,"expected_facts":null}
+{"id":"s24","question":"¿Cómo arreglo el variador de la bomba de vacío si marca error E03?","answerable":false,"expected_doc":null,"expected_facts":null}
+{"id":"s25","question":"¿Qué papeles necesito para renovar mi visa de trabajo?","answerable":false,"expected_doc":null,"expected_facts":null}
+{"id":"s26","question":"¿Cuál es la receta del queso fresco que hacen en la planta?","answerable":false,"expected_doc":null,"expected_facts":null}
