@@ -31,6 +31,7 @@ export const DEMO_SOPS = [
   { key: 'quimicos', file: 'seguridad-de-quimicos.md', title: 'Manejo y seguridad de químicos' },
   { key: 'manejo', file: 'manejo-bajo-estres.md', title: 'Manejo de animales de bajo estrés' },
   { key: 'cip', file: 'limpieza-sala-cip.md', title: 'Limpieza de la sala de ordeño (CIP)' },
+  { key: 'mastitis', file: 'deteccion-y-manejo-de-mastitis.md', title: 'Detección y manejo de mastitis' },
 ] as const;
 
 export type SopKey = (typeof DEMO_SOPS)[number]['key'];
