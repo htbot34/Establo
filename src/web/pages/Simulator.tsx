@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, timeAgo } from '../api';
+import { api, IS_DEMO, timeAgo } from '../api';
 import { Button, Card, PageHeader, Select, Spinner } from '../components';
 
 interface SimWorker {
@@ -191,12 +191,17 @@ export default function Simulator() {
                         <div className="mb-0.5 text-[10px] text-stone-500">📋 plantilla (fuera de ventana 24h)</div>
                       )}
                       <p className="whitespace-pre-wrap">{m.bodyText ?? m.transcriptText ?? ''}</p>
-                      {m.audioReplyUrl && (
-                        <div className="mt-1">
-                          <div className="mb-0.5 text-[10px] text-stone-500">🔊 respuesta de voz (TTS)</div>
-                          <audio controls src={m.audioReplyUrl} className="h-8 w-48" />
-                        </div>
-                      )}
+                      {m.audioReplyUrl &&
+                        (IS_DEMO ? (
+                          <div className="mt-1 w-fit rounded-full bg-stone-100 px-2.5 py-1 text-[10px] text-stone-500">
+                            🔊 respuesta de voz — silenciada en este demo (el sistema real envía audio TTS)
+                          </div>
+                        ) : (
+                          <div className="mt-1">
+                            <div className="mb-0.5 text-[10px] text-stone-500">🔊 respuesta de voz (TTS)</div>
+                            <audio controls src={m.audioReplyUrl} className="h-8 w-48" />
+                          </div>
+                        ))}
                       <div className="mt-0.5 text-right text-[9px] text-stone-400">
                         {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         {m.direction === 'outbound' && ' ✓✓'}
@@ -248,8 +253,8 @@ export default function Simulator() {
                 </button>
               </div>
               <p className="text-[10px] text-stone-400">
-                Prueba: “¿cuánto tiempo dejo el pre-dip?” · “¿me puedes subir el sueldo?” · “hola” ·
-                con una lección pendiente responde “2”
+                Prueba: “¿qué hago si una vaca tiene mastitis?” · “¿cuánto tiempo dejo el pre-dip?” ·
+                “¿me puedes subir el sueldo?” · “hola” · con una lección pendiente responde “2”
               </p>
             </div>
           </div>

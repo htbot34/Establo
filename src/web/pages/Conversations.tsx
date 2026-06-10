@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, fmtDateTime, timeAgo } from '../api';
+import { api, fmtDateTime, IS_DEMO, timeAgo } from '../api';
 import { Badge, Button, Card, EmptyState, PageHeader, Spinner, statusBadge } from '../components';
 
 interface Conv {
@@ -124,9 +124,14 @@ export default function Conversations() {
                       )}
                       {m.type === 'template' && <div className="mb-1 text-xs opacity-70">📋 template</div>}
                       <p className="whitespace-pre-wrap">{m.bodyText ?? m.transcriptText ?? ''}</p>
-                      {m.audioReplyUrl && (
-                        <audio controls src={m.audioReplyUrl} className="mt-1.5 h-9 w-52" />
-                      )}
+                      {m.audioReplyUrl &&
+                        (IS_DEMO ? (
+                          <div className="mt-1.5 w-fit rounded-full bg-black/10 px-3 py-1 text-xs opacity-90">
+                            🔊 respuesta de voz — silenciada en este demo (el sistema real envía audio TTS)
+                          </div>
+                        ) : (
+                          <audio controls src={m.audioReplyUrl} className="mt-1.5 h-9 w-52" />
+                        ))}
                       <div className={`mt-1 text-[10px] ${m.direction === 'inbound' ? 'text-stone-400' : 'text-green-100'}`}>
                         {fmtDateTime(m.createdAt)}
                       </div>
