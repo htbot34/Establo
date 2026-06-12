@@ -19,12 +19,33 @@ interface ModuleRow {
   orderIndex: number;
   dayOffset: number;
   sendHourLocal: number;
+  farmTopic?: string;
   title: string;
   bodyEs: string;
   checkQuestionEs: string;
   checkOptionsEs: string[];
   checkCorrectIndex: number;
 }
+
+/** FARM Animal Care v5 continuing-education areas (audit pack groups by these). */
+const FARM_TOPIC_OPTIONS = [
+  { value: 'none', label: 'Not FARM-specific' },
+  { value: 'stockmanship_general', label: 'General animal care & handling (stockmanship)' },
+  { value: 'preweaned_calf', label: 'Pre-weaned calf care' },
+  { value: 'non_ambulatory', label: 'Non-ambulatory animal management' },
+  { value: 'euthanasia', label: 'Euthanasia' },
+  { value: 'fitness_to_transport', label: 'Fitness to transport' },
+  { value: 'safety_other', label: 'Worker safety / other' },
+];
+
+const FARM_TOPIC_SHORT: Record<string, string> = {
+  stockmanship_general: 'FARM: stockmanship',
+  preweaned_calf: 'FARM: calf care',
+  non_ambulatory: 'FARM: non-ambulatory',
+  euthanasia: 'FARM: euthanasia',
+  fitness_to_transport: 'FARM: transport',
+  safety_other: 'safety',
+};
 
 interface TrackDetail {
   id: string;
@@ -48,6 +69,7 @@ const EMPTY_MODULE = {
   checkCorrectIndex: 0,
   dayOffset: 0,
   sendHourLocal: 7,
+  farmTopic: 'none',
 };
 
 export default function TrackEditor() {
@@ -85,6 +107,7 @@ export default function TrackEditor() {
             checkCorrectIndex: mod.checkCorrectIndex,
             dayOffset: mod.dayOffset,
             sendHourLocal: mod.sendHourLocal,
+            farmTopic: mod.farmTopic ?? 'none',
           },
     );
   }
@@ -167,6 +190,11 @@ export default function TrackEditor() {
                   <span className="text-xs text-stone-400">
                     day {m.dayOffset} · {m.sendHourLocal}:00 local
                   </span>
+                  {m.farmTopic && m.farmTopic !== 'none' && (
+                    <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">
+                      {FARM_TOPIC_SHORT[m.farmTopic] ?? m.farmTopic}
+                    </span>
+                  )}
                 </div>
                 <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap text-sm text-stone-600">{m.bodyEs}</p>
                 <div className="mt-2 rounded-lg bg-stone-50 p-2.5 text-xs text-stone-600">
@@ -220,6 +248,17 @@ export default function TrackEditor() {
                   type="number" min={5} max={20} value={form.sendHourLocal}
                   onChange={(e) => setForm({ ...form, sendHourLocal: Number(e.target.value) })}
                 />
+              </div>
+              <div className="col-span-2">
+                <Label>FARM Animal Care v5 area (groups this lesson in the audit pack)</Label>
+                <Select
+                  value={form.farmTopic}
+                  onChange={(e) => setForm({ ...form, farmTopic: e.target.value })}
+                >
+                  {FARM_TOPIC_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </Select>
               </div>
             </div>
             <div>

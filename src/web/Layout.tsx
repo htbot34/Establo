@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet, Navigate } from 'react-router-dom';
-import { IS_DEMO } from './api';
+import { api, fmtDateTime, IS_DEMO } from './api';
 import { useAuth } from './auth';
 import { Spinner } from './components';
 
@@ -13,6 +14,69 @@ const NAV = [
   { to: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 
+interface Alerts {
+  templatePausedAt: string | null;
+  templatePauseReason: string | null;
+}
+
+/**
+ * Red banner when WhatsApp template delivery failed for a category-policy
+ * reason: drip sends are paused org-wide until an owner acknowledges.
+ */
+function TemplateAlertBanner({ role }: { role: string }) {
+  const [alerts, setAlerts] = useState<Alerts | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const a = await api<Alerts>('/api/alerts');
+        if (!cancelled) setAlerts(a);
+      } catch {
+        /* session expired etc. — banner just stays hidden */
+      }
+    };
+    void poll();
+    const t = setInterval(() => void poll(), 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, []);
+
+  if (!alerts?.templatePausedAt) return null;
+
+  async function acknowledge() {
+    setBusy(true);
+    try {
+      await api('/api/alerts/templates/acknowledge', { method: 'POST', body: {} });
+      setAlerts({ templatePausedAt: null, templatePauseReason: null });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="z-20 flex items-center justify-center gap-3 bg-red-600 px-4 py-2 pl-60 text-center text-xs font-medium text-white">
+      <span>
+        ⚠️ WhatsApp template delivery is failing — possible category change; drip lessons are
+        paused for affected workers. {alerts.templatePauseReason} (since{' '}
+        {fmtDateTime(alerts.templatePausedAt)}). See RUNBOOK → “Template failure banner”.
+      </span>
+      {role === 'owner' && (
+        <button
+          onClick={() => void acknowledge()}
+          disabled={busy}
+          className="shrink-0 rounded bg-white/20 px-2.5 py-1 font-semibold hover:bg-white/30 disabled:opacity-50"
+        >
+          {busy ? 'Resuming…' : 'Acknowledge & resume'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function Layout() {
   const { me, loading, runMode, logout } = useAuth();
   if (loading) return <Spinner label="Loading Establo…" />;
@@ -25,6 +89,7 @@ export default function Layout() {
 
   return (
     <div className="flex min-h-screen flex-col">
+      <TemplateAlertBanner role={me.user.role} />
       {IS_DEMO && (
         <div className="z-10 bg-amber-100 px-4 py-1.5 pl-60 text-center text-xs text-amber-900">
           <strong>Hosted demo</strong> — sample dairy, data resets on reload. Answers here are

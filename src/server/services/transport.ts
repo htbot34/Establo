@@ -14,7 +14,7 @@ export interface TransportResult {
 }
 
 export interface Transport {
-  readonly name: 'mock' | 'twilio';
+  readonly name: 'mock' | 'twilio' | 'sms-stub';
   send(args: TransportSendArgs): Promise<TransportResult>;
 }
 
@@ -62,6 +62,27 @@ const twilioTransport: Transport = {
 
 export function getTransport(): Transport {
   return config().isMock ? mockTransport : twilioTransport;
+}
+
+/**
+ * SMS fallback seam (SMS_FALLBACK_ENABLED): when WhatsApp template delivery
+ * is paused, sendToWorker hands the notification to this transport instead.
+ * Stub-only — it logs what WOULD be sent; a real Twilio SMS transport plugs
+ * in here later without touching sendToWorker.
+ */
+const smsStubTransport: Transport = {
+  name: 'sms-stub',
+  async send(args) {
+    console.log(
+      `→ [sms-stub] WhatsApp templates paused — would send SMS to ${maskPhone(args.to)}: ` +
+        `${(args.body ?? '').slice(0, 80)}`,
+    );
+    return { sid: `SMSSTUB${randomUUID().replace(/-/g, '').slice(0, 24)}`, status: 'stubbed' };
+  },
+};
+
+export function getSmsFallbackTransport(): Transport {
+  return smsStubTransport;
 }
 
 /** Download a Twilio media attachment (authenticated GET, follows redirect). */

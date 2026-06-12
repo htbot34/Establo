@@ -7,6 +7,7 @@ import { DateTime } from 'luxon';
 import { closeDb, getDb, type Db } from '../db/client.js';
 import { runMigrations } from '../db/migrate.js';
 import {
+  agreementSignatures,
   conversations,
   enrollments,
   escalations,
@@ -21,9 +22,12 @@ import {
   workers,
 } from '../db/schema.js';
 import { saveBuffer } from '../lib/storage.js';
+import { getOrCreateActiveAgreement } from '../services/agreements.js';
 import { generateCertificate } from '../services/certificates.js';
+import { mapToFarmTopic } from '../services/farmTopics.js';
 import { ingestDocument } from '../services/ingestion.js';
 import { usingStubEmbeddings } from '../services/embeddings.js';
+import { ES } from '../services/messages.es.js';
 import { synthesizeSpeech } from '../services/speech.js';
 import {
   DEMO_MODULES,
@@ -56,6 +60,10 @@ function boiseTime(daysAgo: number, hour: number, minute = 0): Date {
     .set({ hour, minute, second: 0, millisecond: 0 })
     .toUTC()
     .toJSDate();
+}
+
+function daysAgo(n: number): Date {
+  return new Date(Date.now() - n * 86_400_000);
 }
 
 async function wipeExistingDemoOrg(db: Db): Promise<void> {
@@ -96,16 +104,23 @@ export async function seed(): Promise<void> {
     })
     .returning();
 
-  await db.insert(users).values({
-    orgId: org.id,
-    email: DEMO_OWNER.email,
-    passwordHash: await argon2.hash(DEMO_OWNER.password),
-    role: DEMO_OWNER.role,
-    name: DEMO_OWNER.name,
-  });
+  const [owner] = await db
+    .insert(users)
+    .values({
+      orgId: org.id,
+      email: DEMO_OWNER.email,
+      passwordHash: await argon2.hash(DEMO_OWNER.password),
+      role: DEMO_OWNER.role,
+      name: DEMO_OWNER.name,
+    })
+    .returning();
   console.log(`✓ Org "${org.name}" + owner ${DEMO_OWNER.email}`);
 
-  // ── Workers ────────────────────────────────────────────────────────────────
+  // ── Cow care agreement (v1 default text) ──────────────────────────────────
+  const agreement = await getOrCreateActiveAgreement(db, org.id);
+  console.log(`✓ Cow care agreement v${agreement.version}`);
+
+  // ── Workers (full consent-state mix; see data.ts) ──────────────────────────
   const now = Date.now();
   const workerRows = await db
     .insert(workers)
@@ -117,11 +132,37 @@ export async function seed(): Promise<void> {
         preferredLanguage: 'es',
         status: 'active' as const,
         hiredAt: new Date(now - w.daysEmployed * 86_400_000),
-        lastInboundAt: new Date(now - w.hoursAgo * 3_600_000),
+        lastInboundAt: w.hoursAgo === null ? null : new Date(now - w.hoursAgo * 3_600_000),
+        consentStatus: w.consent,
+        consentMethod: w.consentMethod,
+        consentedAt: w.consentDaysAgo === null ? null : daysAgo(w.consentDaysAgo),
+        // Everyone who ever messaged the number got the one-time disclosure.
+        disclosureSentAt: w.hoursAgo === null ? null : daysAgo(w.daysEmployed),
       })),
     )
     .returning();
-  console.log(`✓ ${workerRows.length} workers`);
+  console.log(
+    `✓ ${workerRows.length} workers (` +
+      `${workerRows.filter((w) => w.consentStatus === 'opted_in').length} opted in, ` +
+      `${workerRows.filter((w) => w.consentStatus === 'pending').length} awaiting opt-in, ` +
+      `${workerRows.filter((w) => w.consentStatus === 'opted_out').length} opted out)`,
+  );
+
+  // Agreement signatures per the demo mix.
+  for (let i = 0; i < DEMO_WORKERS.length; i++) {
+    const spec = DEMO_WORKERS[i].agreement;
+    if (!spec) continue;
+    await db.insert(agreementSignatures).values({
+      orgId: org.id,
+      workerId: workerRows[i].id,
+      agreementId: agreement.id,
+      agreementVersion: agreement.version,
+      signedAt: daysAgo(spec.daysAgo),
+      method: spec.method,
+      attestedBy: spec.attestedBy ?? null,
+    });
+  }
+  console.log(`✓ Agreement signatures (incl. one overdue for annual renewal)`);
 
   // ── SOP documents (ingest + embed) ────────────────────────────────────────
   const docIdByKey = new Map<string, string>();
@@ -165,6 +206,7 @@ export async function seed(): Promise<void> {
         orderIndex: i,
         dayOffset: m.dayOffset,
         sendHourLocal: m.sendHourLocal,
+        farmTopic: m.farmTopic,
         title: m.title,
         bodyEs: m.bodyEs,
         checkQuestionEs: m.checkQuestionEs,
@@ -179,64 +221,90 @@ export async function seed(): Promise<void> {
   const moduleTopic = (i: number) =>
     ['Ordeño', 'Ordeño', 'Químicos y seguridad', 'Manejo de animales', 'Cuidado de becerras', 'Higiene'][i] ?? 'Otro';
 
-  // ── María: completed the track (enrolled 20 days ago) ─────────────────────
-  const maria = workerRows[0];
-  const [mariaEnr] = await db
-    .insert(enrollments)
-    .values({
-      workerId: maria.id,
-      trackId: track.id,
-      orgId: org.id,
-      startedAt: boiseTime(20, 6, 30),
-      status: 'completed',
-    })
-    .returning();
-  for (let i = 0; i < moduleRows.length; i++) {
-    const m = moduleRows[i];
-    const sentAt = boiseTime(20 - DEMO_MODULES[i].dayOffset, 7);
-    const answeredAt = new Date(sentAt.getTime() + (1 + Math.floor(rand() * 5)) * 3_600_000);
-    const passed = i !== 2; // she missed the chemicals check once
-    const answerIndex = passed
-      ? m.checkCorrectIndex
-      : (m.checkCorrectIndex + 1) % m.checkOptionsEs.length;
-    await db.insert(moduleDeliveries).values({
-      enrollmentId: mariaEnr.id,
-      moduleId: m.id,
-      orgId: org.id,
-      scheduledFor: sentAt,
-      status: 'answered',
-      sentAt,
-      checkAnsweredAt: answeredAt,
-      checkAnswerIndex: answerIndex,
-      checkPassed: passed,
-    });
-    await db.insert(trainingEvents).values([
-      {
+  /** Insert a fully-answered enrollment with all events; returns enrollment id. */
+  async function seedCompletedEnrollment(
+    workerId: string,
+    enrolledDaysAgo: number,
+    failedModuleIndex: number,
+  ): Promise<string> {
+    const [enr] = await db
+      .insert(enrollments)
+      .values({
+        workerId,
+        trackId: track.id,
         orgId: org.id,
-        workerId: maria.id,
-        occurredAt: sentAt,
-        eventType: 'module_delivered',
-        topic: moduleTopic(i),
-        questionText: null,
-        answerText: `Módulo entregado: ${m.title}`,
-        sourceDocumentId: m.sourceDocumentId,
-        confidence: 'grounded',
-      },
-      {
+        startedAt: boiseTime(enrolledDaysAgo, 6, 30),
+        status: 'completed',
+      })
+      .returning();
+    for (let i = 0; i < moduleRows.length; i++) {
+      const m = moduleRows[i];
+      const sentAt = boiseTime(enrolledDaysAgo - DEMO_MODULES[i].dayOffset, 7);
+      const answeredAt = new Date(sentAt.getTime() + (1 + Math.floor(rand() * 5)) * 3_600_000);
+      const passed = i !== failedModuleIndex;
+      const answerIndex = passed
+        ? m.checkCorrectIndex
+        : (m.checkCorrectIndex + 1) % m.checkOptionsEs.length;
+      await db.insert(moduleDeliveries).values({
+        enrollmentId: enr.id,
+        moduleId: m.id,
         orgId: org.id,
-        workerId: maria.id,
-        occurredAt: answeredAt,
-        eventType: passed ? 'check_passed' : 'check_failed',
-        topic: moduleTopic(i),
-        questionText: m.checkQuestionEs,
-        answerText: `Respuesta: ${answerIndex + 1}) ${m.checkOptionsEs[answerIndex]}`,
-        sourceDocumentId: m.sourceDocumentId,
-        confidence: 'grounded',
-      },
-    ]);
+        scheduledFor: sentAt,
+        status: 'answered',
+        sentAt,
+        checkAnsweredAt: answeredAt,
+        checkAnswerIndex: answerIndex,
+        checkPassed: passed,
+      });
+      await db.insert(trainingEvents).values([
+        {
+          orgId: org.id,
+          workerId,
+          occurredAt: sentAt,
+          eventType: 'module_delivered',
+          topic: moduleTopic(i),
+          farmTopic: m.farmTopic,
+          questionText: null,
+          answerText: `Módulo entregado: ${m.title}`,
+          sourceDocumentId: m.sourceDocumentId,
+          confidence: 'grounded',
+        },
+        {
+          orgId: org.id,
+          workerId,
+          occurredAt: answeredAt,
+          eventType: passed ? 'check_passed' : 'check_failed',
+          topic: moduleTopic(i),
+          farmTopic: m.farmTopic,
+          questionText: m.checkQuestionEs,
+          answerText: `Respuesta: ${answerIndex + 1}) ${m.checkOptionsEs[answerIndex]}`,
+          sourceDocumentId: m.sourceDocumentId,
+          confidence: 'grounded',
+        },
+      ]);
+    }
+    await generateCertificate(db, enr.id);
+    return enr.id;
   }
-  await generateCertificate(db, mariaEnr.id);
-  console.log(`✓ ${maria.name}: track completed + certificate generated`);
+
+  // ── María: completed 20 days ago + supervisor sign-off ─────────────────────
+  const maria = workerRows[0];
+  const mariaEnrId = await seedCompletedEnrollment(maria.id, 20, 2);
+  await db
+    .update(enrollments)
+    .set({
+      signedOffAt: boiseTime(17, 16),
+      signedOffBy: owner.id,
+      signedOffName: owner.name,
+      signedOffRole: owner.role,
+    })
+    .where(eq(enrollments.id, mariaEnrId));
+  console.log(`✓ ${maria.name}: track completed + certificate + supervisor sign-off`);
+
+  // ── José: completed 90 days ago, NOT signed off (flagged in dashboard) ─────
+  const jose = workerRows[1];
+  await seedCompletedEnrollment(jose.id, 90, 4);
+  console.log(`✓ ${jose.name}: track completed, awaiting supervisor sign-off`);
 
   // ── Pedro: new hire, mid-track (enrolled 3 days ago) ──────────────────────
   const pedro = workerRows[5];
@@ -278,6 +346,7 @@ export async function seed(): Promise<void> {
           occurredAt: scheduled,
           eventType: 'module_delivered',
           topic: moduleTopic(i),
+          farmTopic: m.farmTopic,
           answerText: `Módulo entregado: ${m.title}`,
           sourceDocumentId: m.sourceDocumentId,
           confidence: 'grounded',
@@ -288,6 +357,7 @@ export async function seed(): Promise<void> {
           occurredAt: answeredAt,
           eventType: passed ? 'check_passed' : 'check_failed',
           topic: moduleTopic(i),
+          farmTopic: m.farmTopic,
           questionText: m.checkQuestionEs,
           answerText: `Respuesta: ${answerIndex + 1}) ${m.checkOptionsEs[answerIndex]}`,
           sourceDocumentId: m.sourceDocumentId,
@@ -305,6 +375,29 @@ export async function seed(): Promise<void> {
     }
   }
   console.log(`✓ ${pedro.name}: enrolled, 3 of 6 modules delivered`);
+
+  // ── Rosa: enrolled but never opted in → drips wait, "awaiting opt-in" ──────
+  const rosa = workerRows[6];
+  const [rosaEnr] = await db
+    .insert(enrollments)
+    .values({
+      workerId: rosa.id,
+      trackId: track.id,
+      orgId: org.id,
+      startedAt: boiseTime(1, 8, 0),
+      status: 'active',
+    })
+    .returning();
+  await db.insert(moduleDeliveries).values(
+    moduleRows.map((m, i) => ({
+      enrollmentId: rosaEnr.id,
+      moduleId: m.id,
+      orgId: org.id,
+      scheduledFor: boiseTime(1 - DEMO_MODULES[i].dayOffset, 7),
+      status: 'pending' as const,
+    })),
+  );
+  console.log(`✓ ${rosa.name}: enrolled, awaiting WhatsApp opt-in (text ALTA as her in the simulator)`);
 
   // ── Two weeks of Q&A history + escalations + recent conversations ─────────
   const convByWorker = new Map<string, string>();
@@ -324,16 +417,20 @@ export async function seed(): Promise<void> {
   const escalationStatuses: Array<'open' | 'open' | 'resolved'> = ['open', 'open', 'resolved'];
   let poolCursor = 0;
 
-  for (let daysAgo = 14; daysAgo >= 0; daysAgo--) {
+  for (let dayBack = 14; dayBack >= 0; dayBack--) {
     const interactions = 2 + Math.floor(rand() * 3); // 2–4 per day
     for (let k = 0; k < interactions; k++) {
       const qa = DEMO_QA_POOL[poolCursor % DEMO_QA_POOL.length];
       poolCursor++;
-      // Pedro only has history in his 3 employed days.
-      const eligible = workerRows.filter((_, idx) => (idx === 5 ? daysAgo <= 3 : true));
+      // Pedro only has history in his 3 employed days; Rosa never wrote.
+      const eligible = workerRows.filter((w, idx) => {
+        if (idx === 6) return false;
+        if (idx === 5) return dayBack <= 3;
+        return true;
+      });
       const worker = eligible[Math.floor(rand() * eligible.length)];
       const hour = 5 + Math.floor(rand() * 13);
-      const at = boiseTime(daysAgo, hour, Math.floor(rand() * 59));
+      const at = boiseTime(dayBack, hour, Math.floor(rand() * 59));
       if (at.getTime() > now) continue;
 
       const isNotFound = qa.confidence === 'not_found';
@@ -347,6 +444,7 @@ export async function seed(): Promise<void> {
         occurredAt: at,
         eventType: 'qa_interaction',
         topic: qa.topic,
+        farmTopic: mapToFarmTopic(qa.topic, qa.question),
         questionText: qa.question,
         answerText,
         sourceDocumentId: qa.sopKey ? (docIdByKey.get(qa.sopKey) ?? null) : null,
@@ -371,6 +469,7 @@ export async function seed(): Promise<void> {
           occurredAt: at,
           eventType: 'escalation',
           topic: qa.topic,
+          farmTopic: mapToFarmTopic(qa.topic, qa.question),
           questionText: qa.question,
           confidence: 'not_found',
         });
@@ -378,10 +477,10 @@ export async function seed(): Promise<void> {
       }
 
       // Recent interactions also appear as WhatsApp conversations.
-      if (daysAgo <= 3) {
+      if (dayBack <= 3) {
         const convId = await conversationFor(worker.id, at);
         const audio =
-          qa.voice && daysAgo <= 1 ? await synthesizeSpeech(answerText) : null;
+          qa.voice && dayBack <= 1 ? await synthesizeSpeech(answerText) : null;
         await db.insert(messages).values([
           {
             conversationId: convId,
@@ -415,6 +514,25 @@ export async function seed(): Promise<void> {
     }
   }
   console.log(`✓ ${qaCount} historical Q&A training events, ${escalationCount} escalations`);
+
+  // ── Pedro: cow care agreement sent over WhatsApp, ACEPTO pending ──────────
+  const agreementSentAt = new Date(now - 2 * 3_600_000);
+  await db
+    .update(workers)
+    .set({ pendingAgreementId: agreement.id, pendingAgreementSentAt: agreementSentAt })
+    .where(eq(workers.id, pedro.id));
+  const pedroConv = await conversationFor(pedro.id, agreementSentAt);
+  await db.insert(messages).values({
+    conversationId: pedroConv,
+    orgId: org.id,
+    direction: 'outbound',
+    type: 'text',
+    bodyText: [ES.agreementIntro(org.name), '', agreement.textEs].join('\n'),
+    status: 'delivered',
+    createdAt: agreementSentAt,
+    updatedAt: agreementSentAt,
+  });
+  console.log(`✓ ${pedro.name}: agreement sent, awaiting ACEPTO (reply ACEPTO as him in the simulator)`);
 
   console.log('\n🎉 Seed complete!\n');
   console.log('  Dashboard login:');

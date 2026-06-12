@@ -5,7 +5,9 @@ import {
   Badge,
   Button,
   Card,
+  consentBadge,
   ErrorNote,
+  Input,
   Label,
   Modal,
   PageHeader,
@@ -30,6 +32,9 @@ interface EnrollmentDetail {
   trackName: string;
   status: string;
   startedAt: string;
+  signedOffAt?: string | null;
+  signedOffName?: string | null;
+  signedOffRole?: string | null;
   certificateUrl: string | null;
   deliveries: Delivery[];
 }
@@ -39,10 +44,20 @@ interface TrainingEvent {
   occurredAt: string;
   eventType: string;
   topic: string;
+  farmTopic?: string;
   questionText: string | null;
   answerText: string | null;
   confidence: string | null;
   sourceDocumentTitle: string | null;
+}
+
+interface AgreementStatus {
+  signed: boolean;
+  signedAt: string | null;
+  version: number | null;
+  method: 'whatsapp' | 'paper' | null;
+  renewalDue: boolean;
+  pendingSince: string | null;
 }
 
 interface WorkerDetailData {
@@ -53,6 +68,11 @@ interface WorkerDetailData {
   hiredAt: string | null;
   lastInboundAt: string | null;
   notes: string | null;
+  consentStatus?: string;
+  consentedAt?: string | null;
+  consentMethod?: string | null;
+  consentAttestedBy?: string | null;
+  agreementStatus?: AgreementStatus | null;
   enrollments: EnrollmentDetail[];
   events: TrainingEvent[];
 }
@@ -71,6 +91,15 @@ const EVENT_STYLE: Record<string, { label: string; color: string; icon: string }
   escalation: { label: 'Escalated', color: 'red', icon: '🚩' },
 };
 
+const FARM_LABELS: Record<string, string> = {
+  stockmanship_general: 'FARM: stockmanship',
+  preweaned_calf: 'FARM: calf care',
+  non_ambulatory: 'FARM: non-ambulatory',
+  euthanasia: 'FARM: euthanasia',
+  fitness_to_transport: 'FARM: transport',
+  safety_other: 'safety',
+};
+
 export default function WorkerDetail() {
   const { id } = useParams<{ id: string }>();
   const [data, setData] = useState<WorkerDetailData | null>(null);
@@ -78,6 +107,9 @@ export default function WorkerDetail() {
   const [enrolling, setEnrolling] = useState(false);
   const [trackId, setTrackId] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [attesting, setAttesting] = useState<null | 'consent' | 'agreement'>(null);
+  const [attestName, setAttestName] = useState('');
+  const [note, setNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setData(await api<WorkerDetailData>(`/api/workers/${id}`));
@@ -100,6 +132,60 @@ export default function WorkerDetail() {
     }
   }
 
+  async function sendAgreement() {
+    setError(null);
+    setNote(null);
+    try {
+      const r = await api<{ outcome: string }>(`/api/workers/${id}/agreement/send`, {
+        method: 'POST',
+        body: {},
+      });
+      setNote(
+        r.outcome === 'sent'
+          ? 'Agreement sent — the worker signs by replying ACEPTO.'
+          : 'Agreement queued — it goes out the next time the worker writes (24h window is closed).',
+      );
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function attest() {
+    setError(null);
+    try {
+      if (attesting === 'consent') {
+        await api(`/api/workers/${id}/consent/paper`, {
+          method: 'POST',
+          body: { attestedBy: attestName.trim() },
+        });
+      } else {
+        await api(`/api/workers/${id}/agreement/paper`, {
+          method: 'POST',
+          body: { attestedBy: attestName.trim() },
+        });
+      }
+      setAttesting(null);
+      setAttestName('');
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function signOff(enrollmentId: string) {
+    setError(null);
+    try {
+      await api(`/api/enrollments/${enrollmentId}/signoff`, { method: 'POST', body: {} });
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  const consent = data.consentStatus ?? 'opted_in';
+  const agr = data.agreementStatus;
+
   return (
     <div>
       <div className="mb-2 text-xs">
@@ -119,6 +205,85 @@ export default function WorkerDetail() {
           </>
         }
       />
+      <ErrorNote error={error} />
+      {note && (
+        <div className="mb-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+          {note}
+        </div>
+      )}
+
+      {/* ── Compliance: consent + cow care agreement ── */}
+      <Card className="mb-4 p-5">
+        <div className="grid gap-5 sm:grid-cols-2">
+          <div>
+            <h2 className="mb-1.5 text-sm font-semibold text-stone-700">WhatsApp consent</h2>
+            <div className="flex items-center gap-2 text-sm">
+              {consentBadge(consent)}
+              {data.consentedAt && (
+                <span className="text-xs text-stone-400">
+                  {fmtDate(data.consentedAt)}
+                  {data.consentMethod ? ` · ${data.consentMethod.replace(/_/g, ' ')}` : ''}
+                  {data.consentAttestedBy ? ` · attested by ${data.consentAttestedBy}` : ''}
+                </span>
+              )}
+            </div>
+            {consent === 'pending' && (
+              <div className="mt-2 space-y-2">
+                <p className="text-xs text-stone-500">
+                  Establo sends nothing until this worker opts in: they text the number (ALTA or
+                  any first message), or you collect the printed consent form and attest it here.
+                </p>
+                <Button variant="secondary" onClick={() => setAttesting('consent')}>
+                  ✍️ Consent collected on paper
+                </Button>
+              </div>
+            )}
+            {consent === 'opted_out' && (
+              <p className="mt-2 text-xs text-red-700">
+                This worker texted BAJA. All sends are blocked until they text ALTA themselves —
+                this cannot be overridden from the dashboard.
+              </p>
+            )}
+          </div>
+          <div>
+            <h2 className="mb-1.5 text-sm font-semibold text-stone-700">Cow care agreement</h2>
+            {agr?.signed ? (
+              <div className="text-sm text-stone-700">
+                ✅ Signed v{agr.version} on {fmtDate(agr.signedAt)} via {agr.method}
+                {agr.renewalDue && (
+                  <span className="ml-2">
+                    <Badge color="amber">annual renewal due</Badge>
+                  </span>
+                )}
+              </div>
+            ) : agr?.pendingSince ? (
+              <div className="text-sm text-stone-600">
+                ⏳ Sent {fmtDateTime(agr.pendingSince)} — waiting for the worker to reply{' '}
+                <strong>ACEPTO</strong>
+              </div>
+            ) : (
+              <div className="text-sm text-stone-400">Not signed</div>
+            )}
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => void sendAgreement()}
+                disabled={consent !== 'opted_in'}
+                title={consent !== 'opted_in' ? 'Worker must opt in first' : undefined}
+              >
+                {agr?.signed ? '📨 Send for re-signature' : '📨 Send via WhatsApp'}
+              </Button>
+              <Button variant="secondary" onClick={() => setAttesting('agreement')}>
+                ✍️ Mark signed on paper
+              </Button>
+            </div>
+            <p className="mt-1.5 text-xs text-stone-400">
+              FARM Animal Care v5 expects a signed cow care agreement for every employee with
+              animal care responsibilities, renewed annually.
+            </p>
+          </div>
+        </div>
+      </Card>
 
       {data.enrollments.length > 0 && (
         <div className="mb-4 space-y-3">
@@ -128,9 +293,23 @@ export default function WorkerDetail() {
                 <div>
                   <span className="font-medium text-stone-800">{enr.trackName}</span>
                   <span className="ml-2">{statusBadge(enr.status)}</span>
+                  {enr.status === 'completed' &&
+                    (enr.signedOffAt ? (
+                      <span className="ml-2 text-xs text-green-700">
+                        ✓ Confirmed by {enr.signedOffName} ({enr.signedOffRole}) on{' '}
+                        {fmtDate(enr.signedOffAt)}
+                      </span>
+                    ) : (
+                      <span className="ml-2">
+                        <Badge color="amber">completion not confirmed</Badge>
+                      </span>
+                    ))}
                 </div>
                 <div className="flex items-center gap-3 text-xs text-stone-400">
                   <span>started {fmtDate(enr.startedAt)}</span>
+                  {enr.status === 'completed' && !enr.signedOffAt && (
+                    <Button onClick={() => void signOff(enr.id)}>Confirm completion</Button>
+                  )}
                   {enr.certificateUrl && (
                     <a
                       href={`${enr.certificateUrl}?download`}
@@ -156,6 +335,12 @@ export default function WorkerDetail() {
                   </li>
                 ))}
               </ol>
+              {enr.status === 'active' && consent === 'pending' && (
+                <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  ⏸ Awaiting opt-in — lessons are scheduled but nothing is sent until this worker
+                  opts in on WhatsApp.
+                </p>
+              )}
             </Card>
           ))}
         </div>
@@ -179,6 +364,9 @@ export default function WorkerDetail() {
                     <span>{style.icon}</span>
                     <Badge color={style.color}>{style.label}</Badge>
                     <Badge>{ev.topic}</Badge>
+                    {ev.farmTopic && FARM_LABELS[ev.farmTopic] && (
+                      <Badge color="green">{FARM_LABELS[ev.farmTopic]}</Badge>
+                    )}
                     {ev.confidence && ev.confidence !== 'grounded' && (
                       <Badge color="amber">{ev.confidence}</Badge>
                     )}
@@ -215,10 +403,42 @@ export default function WorkerDetail() {
           <p className="mt-2 text-xs text-stone-400">
             Modules are scheduled from today using each module's day offset, and sent by the
             scheduler at the configured local hour.
+            {consent !== 'opted_in' &&
+              ' This worker has not opted in yet — nothing is sent until they do.'}
           </p>
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setEnrolling(false)}>Cancel</Button>
             <Button disabled={!trackId} onClick={() => void enroll()}>Enroll</Button>
+          </div>
+        </Modal>
+      )}
+
+      {attesting && (
+        <Modal
+          title={
+            attesting === 'consent'
+              ? 'Consent collected on paper'
+              : 'Agreement signed on paper'
+          }
+          onClose={() => setAttesting(null)}
+        >
+          <ErrorNote error={error} />
+          <p className="mb-3 text-sm text-stone-600">
+            {attesting === 'consent'
+              ? `Confirm that ${data.name} signed the printed WhatsApp-consent form. Keep the paper form in their file.`
+              : `Confirm that ${data.name} signed the cow care agreement on paper. Keep the signed copy in their file.`}
+          </p>
+          <Label>Your full name (attestation)</Label>
+          <Input
+            value={attestName}
+            onChange={(e) => setAttestName(e.target.value)}
+            placeholder="Sarah Whitfield"
+          />
+          <div className="mt-4 flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setAttesting(null)}>Cancel</Button>
+            <Button disabled={attestName.trim().length < 2} onClick={() => void attest()}>
+              Attest
+            </Button>
           </div>
         </Modal>
       )}

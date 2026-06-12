@@ -11,8 +11,12 @@
 Workers text or send a voice note to a WhatsApp number and get answers grounded
 ONLY in their dairy's own uploaded SOPs, with citations. New hires receive
 scheduled onboarding lessons with one-question comprehension checks. Every
-interaction is logged as a **training event**, and the owner can export a
-FARM-style audit pack (letter PDF + CSV + per-worker transcripts) in one click.
+interaction is logged as a **training event**, and the owner can export an
+audit pack (letter PDF + CSV + per-worker transcripts) positioned for **FARM
+Animal Care v5** continuing-education documentation in one click. Workers
+control their own WhatsApp opt-in (ALTA/BAJA), get a plain-Spanish privacy
+disclosure at first contact, and sign the dairy's cow care agreement by
+replying ACEPTO.
 
 - **Workers:** WhatsApp only. No app, no login, no password. Simple Spanish.
 - **Managers:** a boring, fast web dashboard (`/app`) for SOPs, workers,
@@ -48,6 +52,11 @@ Then open **Simulator** in the sidebar and play the worker:
 - Enroll a worker in a track (Workers page), press **Run drip scheduler now** →
   the lesson + check arrive; answer "2" → graded and logged
 - Press **Simulate >24h** first to watch the template handshake instead
+- Switch to **Rosa** (awaiting opt-in) → drips skip her; type *"ALTA"* → opt-in
+  + the one-time privacy disclosure, and the scheduler can now reach her
+- Switch to **Pedro** → reply *"ACEPTO"* → his cow care agreement signature is
+  recorded (see his worker page); type *"BAJA"* as any worker → opt-out blocks
+  everything until they text *"ALTA"* again
 
 Everything above works with **no API keys at all** (deterministic stubs).
 Set `ANTHROPIC_API_KEY` in `.env` — even in mock mode — for real Claude
@@ -56,11 +65,44 @@ answers; that is the expected dev setup. Useful commands:
 ```bash
 pnpm ask "¿cuánto tiempo dejo el pre-dip?"   # retrieval+answer smoke test (CLI)
 pnpm eval                                     # run the eval set, print scorecard
-pnpm test                                     # 68 unit + integration tests
+pnpm test                                     # 97 unit + integration tests
 pnpm sample-image                             # regenerate samples/sop-photo-sample.png
 ```
 
 ---
+
+## Worker lifecycle (consent → training → sign-off)
+
+```
+pending ──(worker texts ALTA or any first message; or signed paper form
+           attested by a manager)──▶ opted_in ──▶ enrolled in a track
+   ──▶ signs the cow care agreement (replies ACEPTO, or paper + attestation)
+   ──▶ completes all modules (graded checks) ──▶ supervisor sign-off
+                                                 ("Confirm completion")
+any time: worker texts BAJA ──▶ opted_out (ALL sends blocked until they
+                                 text ALTA again — the dashboard cannot
+                                 override a worker's BAJA)
+```
+
+- **Adding a worker in the dashboard is NOT opt-in** (Meta WhatsApp Business
+  policy). New workers are `pending`: the drip scheduler skips them (shown as
+  "awaiting opt-in") and `sendToWorker` refuses every business-initiated
+  message until they opt in themselves — by texting the number — or sign the
+  printable bilingual consent form (Workers page → Print consent form) which a
+  manager then attests on the worker record.
+- **First contact discloses monitoring**: one-time plain-Spanish notice that
+  conversations are saved as training records the employer can see, voice
+  notes are transcribed, restricted topics go to the supervisor, and BAJA
+  stops messages.
+- **Cow care agreement** (FARM Animal Care v5 expects one per employee with
+  animal-care duties, renewed annually): versioned Spanish text per org
+  (Settings page), sent per worker, signed by replying ACEPTO — the reply +
+  timestamp + version is the signature record. Paper signatures get a manager
+  attestation; signatures older than 11 months show "renewal due".
+- **Supervisor sign-off**: completed tracks show a one-click "Confirm
+  completion" for an owner/manager (name, role, timestamp recorded);
+  unconfirmed completions are flagged — evaluators look beyond paper records,
+  and a human confirmation strengthens every record.
 
 ## The three run modes
 
@@ -155,9 +197,20 @@ Worker WhatsApp ──▶ Twilio ──▶ POST /webhooks/twilio ──▶ webho
   (default `America/Boise`). Window open → full lesson + TTS audio; closed →
   notify template, full lesson on the worker's reply. One gentle reminder
   after 24h unanswered (max 1). Completion → Spanish certificate PDF.
-- **Audit pack:** letter PDF (modeled on the NMSU Extension training-letter
-  format: employees, dates, topics, type, checks), full CSV of
-  `training_events`, and per-worker transcript PDFs, zipped.
+- **Audit pack:** letter PDF positioned for **FARM Animal Care v5**
+  continuing-education expectations — per-employee records grouped by the five
+  FARM areas (general stockmanship, pre-weaned calf care, non-ambulatory,
+  euthanasia, fitness to transport) with explicit coverage-gap flags, cow care
+  agreement status, supervisor sign-offs, and consent state — plus the full
+  CSV of `training_events` (incl. `farm_topic` and compliance columns) and
+  per-worker transcript PDFs, zipped. The letter documents records to support
+  a FARM evaluation; it never claims certification or evaluator approval.
+- **Template-failure detection:** Twilio status callbacks persist error codes;
+  template/category-policy failures (e.g. Meta 131049-class — the US
+  marketing-template block after a silent utility→marketing recategorization)
+  pause ALL template sends for the org, raise a dashboard banner, and wait for
+  owner acknowledgement instead of silently retrying. `SMS_FALLBACK_ENABLED`
+  reserves a transport seam (stub) for SMS delivery during such pauses.
 
 ## Eval harness (grounding is the #1 risk — measure it)
 
@@ -182,6 +235,9 @@ harness always runs — those numbers exercise plumbing, not quality.
 - Worker phones are PII → masked in logs (`+1••••••0101`).
 - Hard guard (pre-LLM) + prompt rules: never salary/employment, legal,
   immigration, or veterinary dosing advice → warm Spanish refusal + escalation.
+- Worker consent gate in `sendToWorker`: business-initiated messages require
+  `opted_in`; BAJA blocks everything until the worker texts ALTA (see
+  **POLICY-SCOPE.md** for the purpose-restriction posture).
 - Prompt-injection resistance: SOP chunks are data; the system prompt orders
   Claude to ignore instructions found inside them.
 - Secrets only via env; `.env.example` documents every variable.
@@ -200,4 +256,6 @@ samples/            sop-photo-sample.png for the OCR path
 ```
 
 Also see **DEPLOY.md** (Fly.io walkthrough), **RUNBOOK.md** (operations),
-**DECISIONS.md** (implementation choices and trade-offs).
+**DECISIONS.md** (implementation choices and trade-offs), and
+**POLICY-SCOPE.md** (why Establo is a purpose-restricted assistant, not a
+general-purpose AI chatbot, with pointers to the enforcing code).

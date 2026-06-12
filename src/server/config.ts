@@ -50,6 +50,9 @@ function buildConfig(env: NodeJS.ProcessEnv) {
     dripCron: env.DRIP_CRON ?? '*/15 * * * *',
     jobsInline: bool(env.JOBS_INLINE, false),
 
+    // SMS fallback seam for paused WhatsApp templates (stub transport only).
+    smsFallbackEnabled: bool(env.SMS_FALLBACK_ENABLED, false),
+
     enableBilling: bool(env.ENABLE_BILLING, false),
     stripeSecretKey: env.STRIPE_SECRET_KEY || undefined,
     stripeWebhookSecret: env.STRIPE_WEBHOOK_SECRET || undefined,

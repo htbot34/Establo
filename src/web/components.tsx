@@ -118,6 +118,17 @@ export function statusBadge(status: string): ReactNode {
   return <Badge color={map[status] ?? 'stone'}>{status}</Badge>;
 }
 
+/** WhatsApp consent state (Meta opt-in policy). */
+export function consentBadge(status: string | null | undefined): ReactNode {
+  const map: Record<string, { color: string; label: string }> = {
+    opted_in: { color: 'green', label: 'opted in' },
+    pending: { color: 'amber', label: 'awaiting opt-in' },
+    opted_out: { color: 'red', label: 'opted out' },
+  };
+  const m = map[status ?? ''] ?? { color: 'stone', label: status ?? '—' };
+  return <Badge color={m.color}>{m.label}</Badge>;
+}
+
 export function Spinner({ label }: { label?: string }) {
   return (
     <div className="flex items-center justify-center gap-2 p-8 text-sm text-stone-500">

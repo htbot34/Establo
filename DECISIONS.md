@@ -137,6 +137,144 @@ low-literacy worker on WhatsApp**, then write it down here.
   (Docker was unavailable in the environment used for this change — same
   code path, no hand edits to `fixture.json`).
 
+
+## Compliance hardening pass (June 2026)
+
+### Baseline fix that preceded everything: day-0 scheduling
+
+`computeScheduledFor` waited for `send_hour_local` even on day-0 modules,
+contradicting its own docstring ("day-0 modules go out immediately after
+enrollment") and making 5 tests + the README demo script fail for anyone
+running before 7 AM Boise time. Day-0 modules now schedule at enrollment
+time; later modules keep the send-hour behavior (don't text workers at 2 AM).
+
+### Task 1 — opt-in/opt-out
+
+- **`consented_at` records the latest consent transition** (opt-in OR
+  opt-out), not only opt-ins — one timestamp column, unambiguous with
+  `consent_status` next to it.
+- **Migration backfill**: existing workers with `last_inbound_at` became
+  `opted_in` with method `imported` — they had already chosen to message the
+  number, which is exactly the opt-in signal; workers who never wrote stay
+  `pending`. Backfilling everyone to `pending` would have silently stopped
+  drips for live dairies.
+- **Both WhatsApp opt-in paths record method `whatsapp_keyword`** (ALTA and
+  any-first-message). The spec fixed the enum to three values; adding a fourth
+  for "first message" wasn't worth deviating. The conversation log shows which
+  message it was.
+- **`sendToWorker` gate is fail-closed by send kind**: `business` (the
+  default — drip lessons, reminders, templates, agreement requests) requires
+  `opted_in`; `reply` (explicitly marked at each call site in the inbound
+  pipeline) is allowed unless `opted_out`; `consent` (opt-out confirmation,
+  disclosure, re-join confirmation) always goes — Meta requires opt-outs to be
+  confirmed. Callers that forget to mark a reply get refusals, never leaks.
+- **Text BAJA/ALTA bypasses the rate limiter** (an opt-out must never be
+  dropped by flood control) but is processed after the message is recorded —
+  the keyword message itself is the consent record.
+- **Opted-out workers who write anything else** get one "estás dado de baja,
+  escribe ALTA" reminder per 24h (in-memory cache, same pattern as the
+  unknown-number reply) and otherwise silence. Full silence felt like a dead
+  end for a worker who may not remember texting BAJA.
+- **Paper consent can never override BAJA** (409): only the worker can rejoin.
+
+### Task 2 — disclosure
+
+One short paragraph (5 sentences), not legalese, sent before the normal reply
+on the first-ever processed message and gated by `disclosure_sent_at`.
+Existing seeded/live workers with history get it on their NEXT message —
+backfilling the timestamp would have claimed we sent something we never sent.
+
+### Task 3 — cow care agreement
+
+- Versioning is append-only: editing the text in Settings creates version
+  n+1 and deactivates the old row; signatures keep pointing at the exact
+  version signed.
+- "Send agreement" with a closed 24h window **queues** it
+  (`pending_agreement_sent_at` stays null) and it goes out with the worker's
+  next inbound message — there is no approved template for agreement text, so
+  this mirrors the module notify/deliver pattern without a new template.
+- Non-ACEPTO replies while an agreement is pending: first one gets the gentle
+  clarification, the second escalates to the manager AND clears the pending
+  state (the manager re-sends if appropriate) — workers are never nagged
+  forever, and their actual question in that message still gets answered
+  normally after the nudge.
+- ACEPTO matching is strict (`acepto` / `sí acepto` / `lo acepto` / `acepto el
+  acuerdo` as the whole message) — a signature should never fire on an
+  incidental word inside a longer sentence.
+
+### Task 4 — farm_topic + sign-off
+
+- Q&A classification is a pure keyword table (`services/farmTopics.ts`):
+  job-specific keyword pass over the question text first (caught: vaca caída,
+  eutanasia, transporte, becerra/calostro), then the existing `<meta topic/>`
+  taxonomy mapped via a fixed table, else `none`. No extra LLM call.
+- Deliberate mapping call: **Ordeño/Higiene/Equipo/Reproducción → `none`** —
+  milking-routine and milk-quality training is real training but not one of
+  the FARM v5 animal-care CE areas; over-claiming would be worse in an
+  evaluation than under-claiming. `Químicos y seguridad → safety_other`
+  (shown in records, excluded from the five-area CE grouping).
+- Sign-off stores `signed_off_name`/`signed_off_role` as text (plus the user
+  FK with `ON DELETE SET NULL`) so the record survives staff turnover.
+- `training_events.farm_topic` backfills to `none` (per spec) — historical
+  rows are not retro-classified; the audit letter only claims what was
+  classified at the time it happened.
+
+### Task 5 — audit pack
+
+- Letter language: "training records maintained to support your FARM Animal
+  Care evaluation" + an explicit "does not constitute FARM program
+  certification, enrollment, or evaluator approval" sentence; the old
+  "supports FARM Program Workforce Development evaluation criteria" claim is
+  gone. Tests pin all of this (including the absence of "Workforce
+  Development").
+- Per-employee CE detail gets its own page after the summary table: five
+  fixed FARM areas per worker, with events/lessons/checks/Q&A counts and date
+  ranges, and amber "No documented continuing education in: …" lines for the
+  gaps — the owner sees holes before an evaluator does.
+- Workers with no events in the window but with compliance records
+  (signature/sign-off) still appear in the letter; consent/agreement/sign-off
+  are point-in-time-of-export state, while events respect the date window.
+- CSV keeps one row per event; the four compliance columns
+  (consent/agreement/sign-off) repeat the worker-level state on each row —
+  spreadsheet-filter-friendly beats normalized here.
+
+### Task 6 — template health
+
+- Detection keys off **error codes only** (never message strings):
+  Twilio 63013/63016/63049 and Meta 131049/131050/132001/132015/132016,
+  curated in `services/templateHealth.ts` with one comment per code. ErrorCode
+  is persisted on the message row either way; only template-type failures with
+  a policy code trip the pause.
+- The pause is org-wide and **sticky until an owner acknowledges** (banner →
+  RUNBOOK procedure). Drip deliveries stay `pending` during a pause and flow
+  again after acknowledgement — nothing is lost, nothing silently retries.
+- SMS fallback is exactly a seam: when paused and `SMS_FALLBACK_ENABLED`, the
+  stub transport logs what WOULD be sent and the send still reports
+  `templates_paused` — pretending a stub delivered would corrupt delivery
+  accounting.
+- Template categories live in code (`WHATSAPP_TEMPLATES`, `category:
+  'utility'`) next to the exact bodies — they are what we submit to Meta, so
+  they version with the copy, not with org data.
+
+### Task 7 — POLICY-SCOPE.md
+
+The scope test pins the similarity floor at the documented real-embeddings
+default (0.25) via `RETRIEVAL_MIN_SIMILARITY` for one test: the keyless stub
+floor (0.02) is deliberately forgiving and would "answer" open-domain
+questions with an extract (bestSim ≈ 0.10 for "¿quién ganó el mundial?"),
+which is a stub artifact, not product behavior. The test therefore exercises
+the real enforcement mechanism at its production setting.
+
+### Demo/seed
+
+Seventh seed worker (Rosa, `pending`, enrolled) demos "awaiting opt-in" +
+the live ALTA flow; Carlos is opted out; Pedro has a pending agreement so
+ACEPTO can be tried in the simulator; María (signed long ago) shows the
+11-month renewal flag; José's completed track is deliberately unconfirmed to
+show the sign-off flag. The static demo mirrors consent/disclosure/ACEPTO
+through the same pure modules (`consentKeywords.ts`, split from `consent.ts`
+so the browser build never imports `pg`).
+
 ## Eval targets
 
 - ≥85% grounded-correct / ≥90% correct-refusal / 0 fabricated citations, as

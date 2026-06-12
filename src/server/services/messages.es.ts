@@ -44,20 +44,66 @@ export const ES = {
   trackComplete: (name: string, track: string) =>
     `🎉 ¡Felicidades, ${name}! Completaste el programa "${track}". ` +
     'Tu certificado ya quedó guardado con tu supervisor.',
+
+  /** One-time first-contact disclosure (privacy/monitoring notice). */
+  disclosure: (dairyName: string) =>
+    `Hola 👋 Soy Establo, el ayudante de capacitación de ${dairyName}. ` +
+    'Tus preguntas y respuestas aquí se guardan como registros de capacitación que tu empleador puede ver. ' +
+    'Las notas de voz se convierten a texto. ' +
+    'No puedo hablar de sueldo, temas legales ni de migración — eso es con tu supervisor. ' +
+    'Si ya no quieres recibir mensajes, escribe BAJA cuando quieras.',
+
+  optInConfirm:
+    '✅ ¡Listo! Ya estás dado de alta. Mándame tus preguntas del trabajo por texto o audio cuando quieras.',
+
+  optOutConfirm:
+    'Entendido. Ya no te mandaremos más mensajes. 🙏 ' +
+    'Si un día quieres volver, escribe ALTA y seguimos donde quedamos.',
+
+  optedOutReminder:
+    'Estás dado de baja, por eso no te puedo contestar. ' +
+    'Si quieres volver a usar el ayudante, escribe ALTA.',
+
+  agreementIntro: (dairyName: string) =>
+    `📋 ${dairyName} te pide firmar su acuerdo de cuidado de las vacas. ` +
+    'Léelo con calma y, si estás de acuerdo, responde con la palabra ACEPTO.',
+
+  agreementHowToSign:
+    'Para firmar, responde con la palabra ACEPTO. Si tienes dudas, pregunta a tu supervisor.',
+
+  agreementClarify:
+    'Solo me falta tu firma del acuerdo de cuidado de las vacas. 🙏 ' +
+    'Si estás de acuerdo, responde ACEPTO. Si tienes dudas, dime y le aviso a tu supervisor.',
+
+  agreementEscalated:
+    'Entendido. Le avisé a tu supervisor para que platique contigo sobre el acuerdo. ' +
+    'Mientras tanto, aquí sigo para tus preguntas del trabajo.',
+
+  agreementSigned: (version: number) =>
+    `✅ ¡Gracias! Tu firma quedó registrada (acuerdo v${version}). ` +
+    'Tu supervisor ya la puede ver.',
 } as const;
 
 /**
  * WhatsApp template copy. In PRODUCTION these exact bodies must be submitted
- * to Meta for approval (utility category) before business-initiated sends
- * outside the 24-hour window will deliver. See README → "Meta templates".
+ * to Meta for approval before business-initiated sends outside the 24-hour
+ * window will deliver. See README → "Meta templates".
+ *
+ * `category` records what we SUBMITTED. Meta can silently recategorize a
+ * template (utility → marketing), and marketing templates to +1 numbers have
+ * been paused since April 2025 — recategorization kills US delivery. The
+ * status webhook detects those failures by error code and pauses template
+ * sends org-wide (see services/templateHealth.ts).
  */
 export const WHATSAPP_TEMPLATES = {
   establo_module_notify: {
     name: 'establo_module_notify',
+    category: 'utility',
     body: 'Hola {{1}}, tienes una lección de capacitación nueva: "{{2}}". Responde OK para recibirla.',
   },
   establo_check_reminder: {
     name: 'establo_check_reminder',
+    category: 'utility',
     body: 'Hola {{1}}, te falta responder la pregunta de tu lección: "{{2}}". Responde con el número de tu respuesta (1, 2 o 3).',
   },
 } as const;

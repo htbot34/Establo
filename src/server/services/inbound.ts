@@ -1,12 +1,31 @@
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import { conversations, escalations, messages, workers, type Worker } from '../db/schema.js';
+import {
+  agreements,
+  conversations,
+  escalations,
+  messages,
+  orgs,
+  workers,
+  type Worker,
+} from '../db/schema.js';
 import { config } from '../config.js';
 import { maskPhone, normalizeWhatsAppAddress } from '../lib/phone.js';
 import { absPath, saveBuffer } from '../lib/storage.js';
+import { deliverPendingAgreement, recordSignature } from './agreements.js';
 import { answerQuestion } from './answer.js';
+import {
+  isAceptoReply,
+  markDisclosureSent,
+  needsDisclosure,
+  optInWorker,
+  optOutWorker,
+  parseConsentKeyword,
+  type ConsentKeyword,
+} from './consent.js';
 import { deliverNotifiedModules, findPendingCheck, handleCheckAnswer, ttsVariant } from './drip.js';
+import { mapToFarmTopic } from './farmTopics.js';
 import { ES } from './messages.es.js';
 import { checkRateLimit } from './rateLimit.js';
 import { routeInbound } from './router.js';
@@ -30,6 +49,13 @@ export interface InboundPayload {
 
 // Reply at most once per day per unknown phone (avoid spamming wrong numbers).
 const unknownPhoneReplies = new Map<string, number>();
+// Same for "you're opted out" reminders — never badger an opted-out worker.
+const optedOutReminders = new Map<string, number>();
+
+export function resetInboundCachesForTests(): void {
+  unknownPhoneReplies.clear();
+  optedOutReminders.clear();
+}
 
 async function findOrCreateConversation(db: Db, worker: Worker) {
   const existing = await db
@@ -75,10 +101,55 @@ async function processMedia(payload: InboundPayload, worker: Worker): Promise<In
   return { kind: 'none' };
 }
 
+async function orgName(db: Db, orgId: string): Promise<string> {
+  const [org] = await db.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, orgId));
+  return org?.name ?? 'tu lechería';
+}
+
+/** Send the one-time first-contact disclosure if this worker never got it. */
+async function sendDisclosureIfNeeded(db: Db, worker: Worker): Promise<void> {
+  if (!needsDisclosure(worker)) return;
+  const sent = await sendToWorker(db, worker.id, {
+    text: ES.disclosure(await orgName(db, worker.orgId)),
+    kind: 'consent',
+  });
+  if (sent.ok) {
+    const now = new Date();
+    await markDisclosureSent(db, worker.id, now);
+    worker.disclosureSentAt = now;
+  }
+}
+
+/**
+ * ALTA / BAJA. The worker's own message is the consent signal, so this always
+ * wins over every other route and is never rate-limited away.
+ */
+async function handleConsentKeyword(
+  db: Db,
+  worker: Worker,
+  keyword: ConsentKeyword,
+): Promise<void> {
+  if (keyword === 'baja') {
+    await optOutWorker(db, worker.id);
+    worker.consentStatus = 'opted_out';
+    await sendToWorker(db, worker.id, { text: ES.optOutConfirm, kind: 'consent' });
+    return;
+  }
+  // ALTA — opt in (or re-join after BAJA).
+  if (worker.consentStatus !== 'opted_in') {
+    await optInWorker(db, worker.id, 'whatsapp_keyword');
+    worker.consentStatus = 'opted_in';
+  }
+  await sendDisclosureIfNeeded(db, worker);
+  await sendToWorker(db, worker.id, { text: ES.optInConfirm, kind: 'consent' });
+}
+
 /**
  * The inbound pipeline (runs as a pg-boss job — the webhook returns 200
- * immediately). Resolves the worker, opens the 24h window, transcribes voice
- * notes, routes, answers, replies (text + voice), and logs training events.
+ * immediately). Resolves the worker, handles consent (ALTA/BAJA) and the
+ * one-time disclosure, opens the 24h window, transcribes voice notes,
+ * handles agreement signatures (ACEPTO), routes, answers, replies
+ * (text + voice), and logs training events.
  */
 export async function processInbound(db: Db, payload: InboundPayload): Promise<void> {
   const from = normalizeWhatsAppAddress(payload.From ?? '');
@@ -95,17 +166,23 @@ export async function processInbound(db: Db, payload: InboundPayload): Promise<v
     return;
   }
 
-  const rate = checkRateLimit(worker.id);
-  if (!rate.allowed) {
-    if (rate.shouldWarn) {
-      // They just messaged us, so the window is open for the warning.
-      await db
-        .update(workers)
-        .set({ lastInboundAt: new Date(), updatedAt: new Date() })
-        .where(eq(workers.id, worker.id));
-      await sendToWorker(db, worker.id, { text: ES.slowDown });
+  // Text consent keywords bypass the rate limiter: an opt-out must never be
+  // dropped by flood control (voice-note consent goes through the normal path).
+  const textKeyword = parseConsentKeyword(payload.Body ?? '');
+
+  if (!textKeyword) {
+    const rate = checkRateLimit(worker.id);
+    if (!rate.allowed) {
+      if (rate.shouldWarn) {
+        // They just messaged us, so the window is open for the warning.
+        await db
+          .update(workers)
+          .set({ lastInboundAt: new Date(), updatedAt: new Date() })
+          .where(eq(workers.id, worker.id));
+        await sendToWorker(db, worker.id, { text: ES.slowDown, kind: 'reply' });
+      }
+      return;
     }
-    return;
   }
 
   // Opening/extending the 24-hour window happens FIRST — replies depend on it.
@@ -137,9 +214,91 @@ export async function processInbound(db: Db, payload: InboundPayload): Promise<v
     .set({ lastMessageAt: now, updatedAt: now })
     .where(eq(conversations.id, conv.id));
 
-  if (media.kind === 'image') {
-    await sendToWorker(db, worker.id, { text: ES.imageNotSupported });
+  // ── Consent first: ALTA/BAJA always win, even mid-onboarding ──────────────
+  const keyword = textKeyword ?? parseConsentKeyword(text);
+  if (keyword) {
+    await handleConsentKeyword(db, worker, keyword);
     return;
+  }
+
+  // Opted-out workers are not processed: remind them how to re-join, at most
+  // once a day, and otherwise stay silent (their BAJA is honored).
+  if (worker.consentStatus === 'opted_out') {
+    const last = optedOutReminders.get(worker.id) ?? 0;
+    if (Date.now() - last > 24 * 3600_000) {
+      optedOutReminders.set(worker.id, Date.now());
+      await sendToWorker(db, worker.id, { text: ES.optedOutReminder, kind: 'consent' });
+    }
+    return;
+  }
+
+  // A pending worker chose to message us — that choice is the opt-in.
+  if (worker.consentStatus === 'pending') {
+    await optInWorker(db, worker.id, 'whatsapp_keyword', undefined, now);
+    worker.consentStatus = 'opted_in';
+  }
+
+  // One-time disclosure goes out before any other reply.
+  await sendDisclosureIfNeeded(db, worker);
+
+  if (media.kind === 'image') {
+    await sendToWorker(db, worker.id, { text: ES.imageNotSupported, kind: 'reply' });
+    return;
+  }
+
+  // ── Cow care agreement: deliver if queued; match ACEPTO if delivered ──────
+  // A message that just triggered delivery can't itself be a reply TO the
+  // agreement — skip ACEPTO matching/nudges for it.
+  const agreementJustDelivered = await deliverPendingAgreement(db, worker);
+  if (!agreementJustDelivered && worker.pendingAgreementId && worker.pendingAgreementSentAt) {
+    if (isAceptoReply(text)) {
+      const [agreement] = await db
+        .select()
+        .from(agreements)
+        .where(eq(agreements.id, worker.pendingAgreementId));
+      if (agreement) {
+        const sig = await recordSignature(db, {
+          orgId: worker.orgId,
+          workerId: worker.id,
+          agreementId: agreement.id,
+          agreementVersion: agreement.version,
+          method: 'whatsapp',
+          signedAt: now,
+        });
+        worker.pendingAgreementId = null;
+        await sendToWorker(db, worker.id, {
+          text: ES.agreementSigned(sig.agreementVersion),
+          kind: 'reply',
+        });
+      }
+      return;
+    }
+    // Not ACEPTO: one gentle clarification, then escalate to the manager and
+    // stop nagging — the message itself still gets processed normally below.
+    if (worker.pendingAgreementNudges === 0) {
+      await db
+        .update(workers)
+        .set({ pendingAgreementNudges: 1, updatedAt: now })
+        .where(eq(workers.id, worker.id));
+      await sendToWorker(db, worker.id, { text: ES.agreementClarify, kind: 'reply' });
+    } else {
+      await db
+        .update(workers)
+        .set({
+          pendingAgreementId: null,
+          pendingAgreementSentAt: null,
+          pendingAgreementNudges: 0,
+          updatedAt: now,
+        })
+        .where(eq(workers.id, worker.id));
+      await db.insert(escalations).values({
+        orgId: worker.orgId,
+        workerId: worker.id,
+        questionText: text.slice(0, 500),
+        reason: 'No confirmó el acuerdo de cuidado de las vacas (sin ACEPTO)',
+      });
+      await sendToWorker(db, worker.id, { text: ES.agreementEscalated, kind: 'reply' });
+    }
   }
 
   // The window just (re)opened — deliver any modules waiting on the template
@@ -157,6 +316,7 @@ export async function processInbound(db: Db, payload: InboundPayload): Promise<v
       if (wasVoice) {
         await sendToWorker(db, worker.id, {
           text: 'No te escuché bien 🙏 ¿Me lo puedes mandar otra vez?',
+          kind: 'reply',
         });
       }
       return;
@@ -170,12 +330,13 @@ export async function processInbound(db: Db, payload: InboundPayload): Promise<v
       if (deliveredNow > 0) return;
       await sendToWorker(db, worker.id, {
         text: '👍 Aquí ando. Mándame tu pregunta por texto o audio cuando quieras.',
+        kind: 'reply',
       });
       return;
     }
     case 'greeting': {
       const name = worker.name.split(/\s+/)[0] ?? worker.name;
-      await sendToWorker(db, worker.id, { text: ES.greeting(name) });
+      await sendToWorker(db, worker.id, { text: ES.greeting(name), kind: 'reply' });
       return;
     }
     case 'help': {
@@ -190,22 +351,29 @@ export async function processInbound(db: Db, payload: InboundPayload): Promise<v
         workerId: worker.id,
         eventType: 'escalation',
         topic: 'Otro',
+        farmTopic: 'none',
         questionText: text,
         confidence: 'not_found',
       });
-      await sendToWorker(db, worker.id, { text: ES.helpEscalated });
+      await sendToWorker(db, worker.id, { text: ES.helpEscalated, kind: 'reply' });
       return;
     }
     case 'question': {
       const result = await answerQuestion(db, worker.orgId, text);
       const audio = wasVoice ? await synthesizeSpeech(ttsVariant(result.text)) : null;
-      await sendToWorker(db, worker.id, { text: result.text, audioUrl: audio?.publicUrl });
+      await sendToWorker(db, worker.id, {
+        text: result.text,
+        audioUrl: audio?.publicUrl,
+        kind: 'reply',
+      });
 
+      const farmTopic = mapToFarmTopic(result.topic, text);
       await logTrainingEvent(db, {
         orgId: worker.orgId,
         workerId: worker.id,
         eventType: 'qa_interaction',
         topic: result.topic,
+        farmTopic,
         questionText: text,
         answerText: result.text,
         sourceDocumentId: result.sourceDocumentId,
@@ -227,6 +395,7 @@ export async function processInbound(db: Db, payload: InboundPayload): Promise<v
           workerId: worker.id,
           eventType: 'escalation',
           topic: result.topic,
+          farmTopic,
           questionText: text,
           confidence: 'not_found',
         });

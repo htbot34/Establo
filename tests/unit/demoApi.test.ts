@@ -30,8 +30,47 @@ describe('static demo in-browser API', () => {
     const me = await demoFetch('/api/auth/me');
     expect(me.org.name).toBe('Rancho Vista Lechería');
     const overview = await demoFetch('/api/overview');
-    expect(overview.activeWorkers).toBe(6);
+    expect(overview.activeWorkers).toBe(7);
     expect(overview.sparkline).toHaveLength(14);
+  });
+
+  it('consent flow: ALTA opts Rosa in (with the one-time disclosure), BAJA opts out', async () => {
+    const rosa = await workerByName('Rosa');
+    let workers = await demoFetch('/api/workers');
+    expect(workers.find((w: { id: string }) => w.id === rosa.id).consentStatus).toBe('pending');
+
+    await demoFetch('/api/simulator/inbound', {
+      method: 'POST',
+      body: { workerId: rosa.id, kind: 'text', text: 'ALTA' },
+    });
+    workers = await demoFetch('/api/workers');
+    expect(workers.find((w: { id: string }) => w.id === rosa.id).consentStatus).toBe('opted_in');
+    const msgs = await lastMessages(rosa.id, 3);
+    expect(msgs.some((m) => m.bodyText?.includes('registros de capacitación'))).toBe(true); // disclosure
+    expect(msgs.some((m) => m.bodyText?.includes('Ya estás dado de alta'))).toBe(true);
+
+    await demoFetch('/api/simulator/inbound', {
+      method: 'POST',
+      body: { workerId: rosa.id, kind: 'text', text: 'BAJA' },
+    });
+    workers = await demoFetch('/api/workers');
+    expect(workers.find((w: { id: string }) => w.id === rosa.id).consentStatus).toBe('opted_out');
+    const [confirm] = await lastMessages(rosa.id, 1);
+    expect(confirm.bodyText).toContain('Ya no te mandaremos más mensajes');
+  });
+
+  it('Pedro signs the pending cow care agreement by replying ACEPTO', async () => {
+    const pedro = await workerByName('Pedro');
+    await demoFetch('/api/simulator/inbound', {
+      method: 'POST',
+      body: { workerId: pedro.id, kind: 'text', text: 'ACEPTO' },
+    });
+    const [reply] = await lastMessages(pedro.id, 1);
+    expect(reply.bodyText).toContain('Tu firma quedó registrada');
+    const workers = await demoFetch('/api/workers');
+    const row = workers.find((w: { id: string }) => w.id === pedro.id);
+    expect(row.agreement).not.toBeNull();
+    expect(row.agreement.method).toBe('whatsapp');
   });
 
   it('answers an SOP question with an extract + citation and logs the event', async () => {
@@ -58,17 +97,28 @@ describe('static demo in-browser API', () => {
   });
 
   it('refuses salary questions and opens an escalation', async () => {
-    const carlos = await workerByName('Carlos');
+    const jose = await workerByName('José');
     const before = (await demoFetch('/api/escalations')).length;
     await demoFetch('/api/simulator/inbound', {
       method: 'POST',
-      body: { workerId: carlos.id, kind: 'text', text: '¿me puedes subir el sueldo?' },
+      body: { workerId: jose.id, kind: 'text', text: '¿me puedes subir el sueldo?' },
     });
-    const [reply] = await lastMessages(carlos.id, 1);
+    const [reply] = await lastMessages(jose.id, 1);
     expect(reply.bodyText).toContain('supervisor');
     const after = await demoFetch('/api/escalations');
     expect(after.length).toBe(before + 1);
     expect(after[0].reason).toContain('Tema restringido');
+  });
+
+  it('Carlos (opted out via BAJA) gets only the re-join reminder, never an answer', async () => {
+    const carlos = await workerByName('Carlos');
+    await demoFetch('/api/simulator/inbound', {
+      method: 'POST',
+      body: { workerId: carlos.id, kind: 'text', text: '¿cuánto tiempo dejo el pre-dip?' },
+    });
+    const [reply] = await lastMessages(carlos.id, 1);
+    expect(reply.bodyText).toContain('Estás dado de baja');
+    expect(reply.bodyText).not.toContain('📄 Fuente');
   });
 
   it('runs the full drip handshake: enroll → closed window → template → OK → lesson → graded check', async () => {

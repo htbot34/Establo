@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { asc, eq } from 'drizzle-orm';
 import { closeDb, getDb } from '../src/server/db/client.js';
 import {
+  agreements,
+  agreementSignatures,
   conversations,
   enrollments,
   escalations,
@@ -83,6 +85,11 @@ async function main() {
       .where(eq(messages.orgId, orgId))
       .orderBy(asc(messages.createdAt)),
     escalations: await db.select().from(escalations).where(eq(escalations.orgId, orgId)),
+    agreements: await db.select().from(agreements).where(eq(agreements.orgId, orgId)),
+    signatures: await db
+      .select()
+      .from(agreementSignatures)
+      .where(eq(agreementSignatures.orgId, orgId)),
   };
 
   fs.mkdirSync(path.dirname(OUT), { recursive: true });

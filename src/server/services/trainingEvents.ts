@@ -1,11 +1,13 @@
 import type { Db } from '../db/client.js';
-import { trainingEvents, type TrainingEventType } from '../db/schema.js';
+import { trainingEvents, type FarmTopic, type TrainingEventType } from '../db/schema.js';
 
 export interface LogEventInput {
   orgId: string;
   workerId: string;
   eventType: TrainingEventType;
   topic: string;
+  /** FARM Animal Care v5 CE area (module setting or keyword-mapped). */
+  farmTopic?: FarmTopic;
   occurredAt?: Date;
   questionText?: string | null;
   answerText?: string | null;
@@ -21,6 +23,7 @@ export async function logTrainingEvent(db: Db, input: LogEventInput): Promise<vo
     workerId: input.workerId,
     eventType: input.eventType,
     topic: input.topic,
+    farmTopic: input.farmTopic ?? 'none',
     occurredAt: input.occurredAt ?? new Date(),
     questionText: input.questionText ?? null,
     answerText: input.answerText ?? null,

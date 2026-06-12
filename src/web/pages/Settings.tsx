@@ -1,11 +1,18 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { api } from '../api';
+import { api, fmtDate } from '../api';
 import { useAuth } from '../auth';
-import { Badge, Button, Card, ErrorNote, Input, Label, PageHeader } from '../components';
+import { Badge, Button, Card, ErrorNote, Input, Label, PageHeader, Textarea } from '../components';
 
 interface BillingStatus {
   enabled: boolean;
   billing: { active?: boolean };
+}
+
+interface Agreement {
+  id: string;
+  version: number;
+  textEs: string;
+  createdAt: string;
 }
 
 export default function Settings() {
@@ -16,6 +23,9 @@ export default function Settings() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [billing, setBilling] = useState<BillingStatus | null>(null);
+  const [agreement, setAgreement] = useState<Agreement | null>(null);
+  const [agreementText, setAgreementText] = useState('');
+  const [agreementSaved, setAgreementSaved] = useState(false);
 
   useEffect(() => {
     if (me) {
@@ -26,7 +36,30 @@ export default function Settings() {
   }, [me]);
   useEffect(() => {
     void api<BillingStatus>('/api/billing/status').then(setBilling).catch(() => {});
+    void api<Agreement>('/api/agreement')
+      .then((a) => {
+        setAgreement(a);
+        setAgreementText(a.textEs);
+      })
+      .catch(() => {});
   }, []);
+
+  async function saveAgreement() {
+    setError(null);
+    setAgreementSaved(false);
+    try {
+      const a = await api<Agreement>('/api/agreement', {
+        method: 'PATCH',
+        body: { textEs: agreementText },
+      });
+      setAgreement(a);
+      setAgreementText(a.textEs);
+      setAgreementSaved(true);
+      setTimeout(() => setAgreementSaved(false), 2500);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -91,6 +124,35 @@ export default function Settings() {
           mode. See the README for the path from mock → sandbox → production.
         </p>
       </Card>
+
+      {agreement && (
+        <Card className="mb-4 max-w-xl p-5">
+          <h2 className="mb-1 text-sm font-semibold text-stone-700">
+            Cow care agreement{' '}
+            <Badge color="stone">v{agreement.version}</Badge>
+          </h2>
+          <p className="mb-3 text-xs text-stone-400">
+            FARM Animal Care v5 expects every employee with animal care responsibilities to sign
+            this, renewed annually. Workers sign by replying ACEPTO on WhatsApp. Editing the text
+            creates version {agreement.version + 1}; existing signatures keep their version.
+            Current version since {fmtDate(agreement.createdAt)}.
+          </p>
+          <Textarea
+            rows={12}
+            value={agreementText}
+            onChange={(e) => setAgreementText(e.target.value)}
+          />
+          <div className="mt-3 flex items-center gap-3">
+            <Button
+              onClick={() => void saveAgreement()}
+              disabled={agreementText.trim() === agreement.textEs.trim()}
+            >
+              Save as new version
+            </Button>
+            {agreementSaved && <span className="text-sm text-green-700">Saved ✓</span>}
+          </div>
+        </Card>
+      )}
 
       {billing?.enabled && (
         <Card className="max-w-xl p-5">

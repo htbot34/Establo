@@ -1,10 +1,10 @@
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
-import { conversations, messages, workers } from '../db/schema.js';
+import { conversations, messages, orgs, workers } from '../db/schema.js';
 import { config } from '../config.js';
 import { maskPhone } from '../lib/phone.js';
 import { renderTemplate, type TemplateName } from './messages.es.js';
-import { getTransport } from './transport.js';
+import { getSmsFallbackTransport, getTransport } from './transport.js';
 import { windowState } from './window.js';
 
 export const MAX_SEGMENT_CHARS = 1200;
@@ -35,17 +35,37 @@ export function splitMessage(text: string, max: number = MAX_SEGMENT_CHARS): str
   return segments;
 }
 
+/**
+ * Who initiated this send? Consent gating depends on it:
+ *   'business' — Establo/the employer initiated (drip lessons, reminders,
+ *                templates, agreement requests). Requires the worker to be
+ *                opted_in. THE DEFAULT — callers must opt INTO 'reply'.
+ *   'reply'    — direct response to a message the worker just sent. Allowed
+ *                unless the worker opted out.
+ *   'consent'  — the consent flow itself (opt-out confirmation, disclosure,
+ *                re-join confirmation). Always allowed; Meta requires
+ *                opt-outs to be confirmed.
+ */
+export type SendKind = 'business' | 'reply' | 'consent';
+
 export interface OutboundPayload {
   text: string;
   /** Public URL path of a voice note to send alongside (e.g. /media/audio/x.ogg) */
   audioUrl?: string;
   /** Template sends are allowed outside the 24h window. */
   template?: { name: TemplateName; vars: string[] };
+  kind?: SendKind;
 }
+
+export type SendRefusalReason =
+  | 'window_closed'
+  | 'worker_not_found'
+  | 'not_opted_in'
+  | 'templates_paused';
 
 export type SendOutcome =
   | { ok: true; messageIds: string[]; sids: string[] }
-  | { ok: false; reason: 'window_closed' | 'worker_not_found'; messageIds: [] };
+  | { ok: false; reason: SendRefusalReason; messageIds: [] };
 
 async function findOrCreateConversation(db: Db, workerId: string, orgId: string) {
   const existing = await db
@@ -62,12 +82,17 @@ async function findOrCreateConversation(db: Db, workerId: string, orgId: string)
 
 /**
  * THE single outbound door. Every flow (Q&A replies, drip modules,
- * reminders, system notices) sends through here so the WhatsApp 24-hour
- * window policy is enforced in exactly one place:
- *   - window open   → free-form sends allowed
- *   - window closed → only template sends go out; free-form attempts are
- *                     rejected with reason "window_closed" so the caller can
- *                     fall back to a template handshake.
+ * reminders, agreements, system notices) sends through here so policy is
+ * enforced in exactly one place:
+ *   1. Consent gate (Meta opt-in policy): business-initiated sends require
+ *      consent_status = 'opted_in'; replies are allowed unless opted_out;
+ *      consent-flow messages always go (opt-outs must be confirmed).
+ *   2. Template pause: when a template/category-policy failure was detected,
+ *      ALL template sends for the org are refused until an owner
+ *      acknowledges — never silently retried. (SMS fallback seam lives here.)
+ *   3. 24h window (Meta policy): window open → free-form allowed; closed →
+ *      only templates, free-form is rejected with "window_closed" so the
+ *      caller can fall back to the template handshake.
  */
 export async function sendToWorker(
   db: Db,
@@ -78,7 +103,34 @@ export async function sendToWorker(
   const [worker] = await db.select().from(workers).where(eq(workers.id, workerId));
   if (!worker) return { ok: false, reason: 'worker_not_found', messageIds: [] };
 
+  const kind: SendKind = payload.kind ?? 'business';
+  if (kind !== 'consent') {
+    const blocked =
+      kind === 'business'
+        ? worker.consentStatus !== 'opted_in'
+        : worker.consentStatus === 'opted_out';
+    if (blocked) return { ok: false, reason: 'not_opted_in', messageIds: [] };
+  }
+
   const isTemplate = !!payload.template;
+  if (isTemplate) {
+    const [org] = await db
+      .select({ pausedAt: orgs.templateSendsPausedAt })
+      .from(orgs)
+      .where(eq(orgs.id, worker.orgId));
+    if (org?.pausedAt) {
+      // SMS fallback seam: when templates are down, a real SMS transport
+      // could carry the notification instead. Stub-only for now.
+      if (config().smsFallbackEnabled) {
+        await getSmsFallbackTransport().send({
+          to: worker.phoneE164,
+          body: renderTemplate(payload.template!.name, payload.template!.vars),
+        });
+      }
+      return { ok: false, reason: 'templates_paused', messageIds: [] };
+    }
+  }
+
   if (!isTemplate && windowState(worker.lastInboundAt, now) === 'closed') {
     return { ok: false, reason: 'window_closed', messageIds: [] };
   }

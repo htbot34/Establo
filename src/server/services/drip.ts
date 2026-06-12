@@ -138,6 +138,7 @@ export async function deliverModule(db: Db, deliveryId: string): Promise<boolean
     workerId: worker.id,
     eventType: 'module_delivered',
     topic: classifyTopicByKeywords(`${module.title} ${module.bodyEs}`),
+    farmTopic: module.farmTopic,
     answerText: `Módulo entregado: ${module.title}`,
     sourceDocumentId: module.sourceDocumentId,
     confidence: 'grounded',
@@ -227,13 +228,14 @@ export async function handleCheckAnswer(
         module.checkOptionsEs[module.checkCorrectIndex],
       );
   const audio = opts.wasVoice ? await synthesizeSpeech(ttsVariant(reply)) : null;
-  await sendToWorker(db, worker.id, { text: reply, audioUrl: audio?.publicUrl });
+  await sendToWorker(db, worker.id, { text: reply, audioUrl: audio?.publicUrl, kind: 'reply' });
 
   await logTrainingEvent(db, {
     orgId: worker.orgId,
     workerId: worker.id,
     eventType: passed ? 'check_passed' : 'check_failed',
     topic: classifyTopicByKeywords(`${module.title} ${module.bodyEs}`),
+    farmTopic: module.farmTopic,
     questionText: module.checkQuestionEs,
     answerText: `Respuesta: ${answerIndex + 1}) ${module.checkOptionsEs[answerIndex] ?? ''}`,
     sourceDocumentId: module.sourceDocumentId,
@@ -266,6 +268,7 @@ export async function handleCheckAnswer(
       .where(eq(onboardingTracks.id, enr.trackId));
     await sendToWorker(db, worker.id, {
       text: ES.trackComplete(firstName(worker.name), trk?.name ?? 'de capacitación'),
+      kind: 'reply',
     });
   }
 }
@@ -282,6 +285,10 @@ export interface DripTickResult {
  *     is open, otherwise send the pre-approved notify template and mark
  *     `notified` (full module goes out when the worker replies).
  *  2. unanswered checks >24h old → one gentle reminder (max 1 retry).
+ *
+ * Only opted-in workers receive anything (Meta opt-in policy) — workers in
+ * 'pending'/'opted_out' are skipped entirely and surfaced in the dashboard
+ * as "awaiting opt-in" / "opted out". sendToWorker enforces the same gate.
  */
 export async function runDripTick(db: Db, now: Date = new Date()): Promise<DripTickResult> {
   const result: DripTickResult = { delivered: 0, notified: 0, reminded: 0 };
@@ -298,6 +305,7 @@ export async function runDripTick(db: Db, now: Date = new Date()): Promise<DripT
         lte(moduleDeliveries.scheduledFor, now),
         eq(enrollments.status, 'active'),
         eq(workers.status, 'active'),
+        eq(workers.consentStatus, 'opted_in'),
       ),
     )
     .orderBy(moduleDeliveries.scheduledFor);
@@ -339,6 +347,7 @@ export async function runDripTick(db: Db, now: Date = new Date()): Promise<DripT
         eq(moduleDeliveries.retryCount, 0),
         eq(enrollments.status, 'active'),
         eq(workers.status, 'active'),
+        eq(workers.consentStatus, 'opted_in'),
       ),
     );
 

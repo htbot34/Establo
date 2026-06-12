@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, IS_DEMO, timeAgo } from '../api';
-import { Button, Card, PageHeader, Select, Spinner } from '../components';
+import { Button, Card, consentBadge, PageHeader, Select, Spinner } from '../components';
 
 interface SimWorker {
   id: string;
   name: string;
   phoneE164: string;
   lastInboundAt: string | null;
+  consentStatus?: string;
+  pendingAgreement?: boolean;
 }
 
 interface Msg {
@@ -132,6 +134,12 @@ export default function Simulator() {
               )}{' '}
               — last inbound {timeAgo(conv?.lastInboundAt ?? worker?.lastInboundAt)}
             </div>
+            <div className="mt-1.5 flex items-center gap-2 text-xs text-stone-500">
+              Consent: {consentBadge(worker?.consentStatus)}
+              {worker?.pendingAgreement && (
+                <span className="text-amber-700">📋 agreement awaiting ACEPTO</span>
+              )}
+            </div>
           </Card>
           <Card className="space-y-2 p-4">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-stone-400">
@@ -254,7 +262,9 @@ export default function Simulator() {
               </div>
               <p className="text-[10px] text-stone-400">
                 Prueba: “¿qué hago si una vaca tiene mastitis?” · “¿cuánto tiempo dejo el pre-dip?” ·
-                “¿me puedes subir el sueldo?” · “hola” · con una lección pendiente responde “2”
+                “¿me puedes subir el sueldo?” · “hola” · con una lección pendiente responde “2” ·
+                consentimiento: “ALTA” (alta + aviso de privacidad) / “BAJA” (baja) · con un acuerdo
+                pendiente responde “ACEPTO” (firma)
               </p>
             </div>
           </div>

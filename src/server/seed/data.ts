@@ -14,15 +14,73 @@ export const DEMO_OWNER = {
   role: 'owner' as const,
 };
 
-/** hoursAgo → last_inbound_at; daysEmployed → hired_at */
-export const DEMO_WORKERS = [
-  { name: 'María Guadalupe Ramírez', phone: '+12085550101', hoursAgo: 2, daysEmployed: 420 },
-  { name: 'José Luis Hernández', phone: '+12085550102', hoursAgo: 30, daysEmployed: 250 },
-  { name: 'Ana Sofía Torres', phone: '+12085550103', hoursAgo: 3, daysEmployed: 150 },
-  { name: 'Carlos Mendoza Ríos', phone: '+12085550104', hoursAgo: 120, daysEmployed: 95 },
-  { name: 'Luz Elena Vargas', phone: '+12085550105', hoursAgo: 1, daysEmployed: 60 },
-  { name: 'Pedro Aguilar Sánchez', phone: '+12085550106', hoursAgo: 1, daysEmployed: 3 },
-] as const;
+/**
+ * hoursAgo → last_inbound_at (null = never messaged); daysEmployed → hired_at.
+ * The consent/agreement mix is deliberate so the demo shows every state:
+ *   María   opted_in, agreement signed 380d ago (annual RENEWAL DUE), track
+ *           completed + supervisor signed off
+ *   José    opted_in (imported), agreement on paper, track completed but
+ *           NOT signed off (flagged)
+ *   Ana     opted_in, agreement never signed
+ *   Carlos  OPTED OUT (texted BAJA) — all sends blocked
+ *   Luz     opted_in, agreement signed recently via WhatsApp
+ *   Pedro   opted_in, mid-track, agreement SENT awaiting ACEPTO (try it in
+ *           the simulator)
+ *   Rosa    PENDING — enrolled but never messaged: "awaiting opt-in", drip
+ *           skips her (text ALTA as her in the simulator to watch the
+ *           disclosure + opt-in flow)
+ */
+export interface DemoWorker {
+  name: string;
+  phone: string;
+  hoursAgo: number | null;
+  daysEmployed: number;
+  consent: 'pending' | 'opted_in' | 'opted_out';
+  consentMethod: 'whatsapp_keyword' | 'paper_form' | 'imported' | null;
+  consentDaysAgo: number | null;
+  /** Cow care agreement signature (null = unsigned). */
+  agreement: { method: 'whatsapp' | 'paper'; daysAgo: number; attestedBy?: string } | null;
+  /** Agreement sent over WhatsApp, ACEPTO still pending. */
+  agreementPending?: boolean;
+}
+
+export const DEMO_WORKERS: DemoWorker[] = [
+  {
+    name: 'María Guadalupe Ramírez', phone: '+12085550101', hoursAgo: 2, daysEmployed: 420,
+    consent: 'opted_in', consentMethod: 'whatsapp_keyword', consentDaysAgo: 420,
+    agreement: { method: 'whatsapp', daysAgo: 380 },
+  },
+  {
+    name: 'José Luis Hernández', phone: '+12085550102', hoursAgo: 30, daysEmployed: 250,
+    consent: 'opted_in', consentMethod: 'imported', consentDaysAgo: 250,
+    agreement: { method: 'paper', daysAgo: 200, attestedBy: 'Sarah Whitfield' },
+  },
+  {
+    name: 'Ana Sofía Torres', phone: '+12085550103', hoursAgo: 3, daysEmployed: 150,
+    consent: 'opted_in', consentMethod: 'whatsapp_keyword', consentDaysAgo: 150,
+    agreement: null,
+  },
+  {
+    name: 'Carlos Mendoza Ríos', phone: '+12085550104', hoursAgo: 120, daysEmployed: 95,
+    consent: 'opted_out', consentMethod: 'whatsapp_keyword', consentDaysAgo: 5,
+    agreement: null,
+  },
+  {
+    name: 'Luz Elena Vargas', phone: '+12085550105', hoursAgo: 1, daysEmployed: 60,
+    consent: 'opted_in', consentMethod: 'whatsapp_keyword', consentDaysAgo: 60,
+    agreement: { method: 'whatsapp', daysAgo: 30 },
+  },
+  {
+    name: 'Pedro Aguilar Sánchez', phone: '+12085550106', hoursAgo: 1, daysEmployed: 3,
+    consent: 'opted_in', consentMethod: 'whatsapp_keyword', consentDaysAgo: 3,
+    agreement: null, agreementPending: true,
+  },
+  {
+    name: 'Rosa Imelda Castillo', phone: '+12085550107', hoursAgo: null, daysEmployed: 1,
+    consent: 'pending', consentMethod: null, consentDaysAgo: null,
+    agreement: null,
+  },
+];
 
 /** Seed SOP documents: file in seed/sops/, display title, short key. */
 export const DEMO_SOPS = [
@@ -51,6 +109,15 @@ export interface DemoModule {
   checkOptionsEs: string[];
   checkCorrectIndex: number;
   sopKey: SopKey;
+  /** FARM Animal Care v5 CE area — the manager sets this per module. */
+  farmTopic:
+    | 'stockmanship_general'
+    | 'preweaned_calf'
+    | 'non_ambulatory'
+    | 'euthanasia'
+    | 'fitness_to_transport'
+    | 'safety_other'
+    | 'none';
 }
 
 export const DEMO_MODULES: DemoModule[] = [
@@ -71,6 +138,7 @@ export const DEMO_MODULES: DemoModule[] = [
     checkOptionsEs: ['Solo 1 chorro', '3 a 4 chorros', '10 chorros o más'],
     checkCorrectIndex: 1,
     sopKey: 'ordeno',
+    farmTopic: 'none',
   },
   {
     dayOffset: 1,
@@ -86,6 +154,7 @@ export const DEMO_MODULES: DemoModule[] = [
     checkOptionsEs: ['5 segundos', '30 segundos', '5 minutos'],
     checkCorrectIndex: 1,
     sopKey: 'ordeno',
+    farmTopic: 'none',
   },
   {
     dayOffset: 2,
@@ -103,6 +172,7 @@ export const DEMO_MODULES: DemoModule[] = [
     checkOptionsEs: ['Limpia mejor', 'No pasa nada', 'Se forma un gas tóxico muy peligroso'],
     checkCorrectIndex: 2,
     sopKey: 'quimicos',
+    farmTopic: 'safety_other',
   },
   {
     dayOffset: 4,
@@ -120,6 +190,7 @@ export const DEMO_MODULES: DemoModule[] = [
     checkOptionsEs: ['En el hombro', 'En la cola', 'En las orejas'],
     checkCorrectIndex: 0,
     sopKey: 'manejo',
+    farmTopic: 'stockmanship_general',
   },
   {
     dayOffset: 7,
@@ -136,6 +207,7 @@ export const DEMO_MODULES: DemoModule[] = [
     checkOptionsEs: ['1 litro', '4 litros', 'El calostro no es importante'],
     checkCorrectIndex: 1,
     sopKey: 'becerras',
+    farmTopic: 'preweaned_calf',
   },
   {
     dayOffset: 10,
@@ -157,6 +229,7 @@ export const DEMO_MODULES: DemoModule[] = [
     ],
     checkCorrectIndex: 1,
     sopKey: 'cip',
+    farmTopic: 'none',
   },
 ];
 

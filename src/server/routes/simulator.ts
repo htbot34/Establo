@@ -29,6 +29,8 @@ export function registerSimulatorRoutes(app: FastifyInstance): void {
       name: w.name,
       phoneE164: w.phoneE164,
       lastInboundAt: w.lastInboundAt,
+      consentStatus: w.consentStatus,
+      pendingAgreement: !!(w.pendingAgreementId && w.pendingAgreementSentAt),
     }));
   });
 

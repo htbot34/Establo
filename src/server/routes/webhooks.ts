@@ -5,6 +5,7 @@ import { messages, webhookLogs } from '../db/schema.js';
 import { config } from '../config.js';
 import { dispatch } from '../jobs/boss.js';
 import type { InboundPayload } from '../services/inbound.js';
+import { isTemplatePolicyError, pauseTemplateSends } from '../services/templateHealth.js';
 import { validateTwilioSignature } from '../services/twilioSignature.js';
 
 const TWIML_EMPTY = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>';
@@ -52,16 +53,30 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
     return reply.type('text/xml').send(TWIML_EMPTY);
   });
 
-  /** Twilio delivery status callbacks — update message status, nothing else. */
+  /**
+   * Twilio delivery status callbacks. Updates the message status and persists
+   * the ErrorCode on failures. Failed/undelivered TEMPLATE sends with a
+   * template/category-policy error code (e.g. Meta 131049-class: the US
+   * marketing-template block hit after a silent utility→marketing
+   * recategorization) pause ALL template sends for the org until an owner
+   * acknowledges — those failures must never be silently retried.
+   */
   app.post('/webhooks/twilio/status', async (req, reply) => {
     const params = (req.body ?? {}) as Record<string, string>;
     const sid = params.MessageSid ?? params.SmsSid;
     const status = params.MessageStatus ?? params.SmsStatus;
+    const errorCode = params.ErrorCode || undefined;
     if (sid && status) {
-      await getDb()
+      const db = getDb();
+      const [row] = await db
         .update(messages)
-        .set({ status, updatedAt: new Date() })
-        .where(eq(messages.twilioSid, sid));
+        .set({ status, errorCode: errorCode ?? null, updatedAt: new Date() })
+        .where(eq(messages.twilioSid, sid))
+        .returning({ id: messages.id, orgId: messages.orgId, type: messages.type });
+      const failed = status === 'failed' || status === 'undelivered';
+      if (row && failed && row.type === 'template' && isTemplatePolicyError(errorCode)) {
+        await pauseTemplateSends(db, row.orgId, errorCode!);
+      }
     }
     return reply.type('text/xml').send(TWIML_EMPTY);
   });

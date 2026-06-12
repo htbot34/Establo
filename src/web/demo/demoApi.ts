@@ -11,6 +11,12 @@
  */
 import { ApiError } from '../api';
 import { ES } from '../../server/services/messages.es';
+import {
+  isAceptoReply,
+  parseConsentKeyword,
+  renewalDue,
+} from '../../server/services/consentKeywords';
+import { mapToFarmTopic } from '../../server/services/farmTopics';
 import { matchForbiddenTopic } from '../../server/services/guards';
 import { routeInbound } from '../../server/services/router';
 import { classifyTopicByKeywords } from '../../server/services/topics';
@@ -35,6 +41,8 @@ interface Store {
   conversations: Row[];
   messages: Row[];
   escalations: Row[];
+  agreements: Row[];
+  signatures: Row[];
   exports: Row[];
 }
 
@@ -43,9 +51,12 @@ const fixture = fixtureJson as unknown as Omit<Store, 'authed' | 'exports'>;
 let store: Store | undefined;
 function db(): Store {
   if (!store) {
+    const data = JSON.parse(JSON.stringify(fixture)) as typeof fixture;
     store = {
       authed: true, // the public demo starts signed in
-      ...(JSON.parse(JSON.stringify(fixture)) as typeof fixture),
+      ...data,
+      agreements: data.agreements ?? [],
+      signatures: data.signatures ?? [],
       exports: [],
     };
   }
@@ -175,6 +186,7 @@ function logEvent(workerId: string, ev: Partial<Row> & { eventType: string; topi
     orgId: s.org.id,
     workerId,
     occurredAt: nowIso(),
+    farmTopic: 'none',
     questionText: null,
     answerText: null,
     sourceDocumentId: null,
@@ -183,6 +195,23 @@ function logEvent(workerId: string, ev: Partial<Row> & { eventType: string; topi
     createdAt: nowIso(),
     ...ev,
   });
+}
+
+function activeAgreement(): Row {
+  const s = db();
+  let a = s.agreements.find((x) => x.active);
+  if (!a) {
+    a = { id: uuid(), orgId: s.org.id, type: 'cow_care', version: 1, textEs: 'ACUERDO DE CUIDADO DE LAS VACAS', active: true, createdAt: nowIso() };
+    s.agreements.push(a);
+  }
+  return a;
+}
+
+function latestSignature(workerId: string): Row | null {
+  const sigs = db()
+    .signatures.filter((x) => x.workerId === workerId)
+    .sort((a, b) => ts(b.signedAt) - ts(a.signedAt));
+  return sigs[0] ?? null;
 }
 
 function addEscalation(workerId: string, questionText: string, reason: string): void {
@@ -225,6 +254,7 @@ function deliverModule(delivery: Row): boolean {
   logEvent(enrollment.workerId, {
     eventType: 'module_delivered',
     topic: classifyTopicByKeywords(`${module.title} ${module.bodyEs}`),
+    farmTopic: module.farmTopic ?? 'none',
     answerText: `Módulo entregado: ${module.title}`,
     sourceDocumentId: module.sourceDocumentId,
     confidence: 'grounded',
@@ -242,6 +272,7 @@ function runDrip(): { delivered: number; notified: number; reminded: number } {
     if (!enr || enr.status !== 'active') continue;
     const worker = s.workers.find((w) => w.id === enr.workerId);
     if (!worker || worker.status !== 'active') continue;
+    if ((worker.consentStatus ?? 'opted_in') !== 'opted_in') continue; // Meta opt-in gate
     if (windowState(dateOf(worker.lastInboundAt), now) === 'open') {
       if (deliverModule(d)) result.delivered++;
     } else {
@@ -298,6 +329,7 @@ function gradeCheck(workerId: string, ctx: { delivery: Row; module: Row }, answe
   logEvent(workerId, {
     eventType: passed ? 'check_passed' : 'check_failed',
     topic: classifyTopicByKeywords(`${module.title} ${module.bodyEs}`),
+    farmTopic: module.farmTopic ?? 'none',
     questionText: module.checkQuestionEs,
     answerText: `Respuesta: ${answerIndex + 1}) ${module.checkOptionsEs[answerIndex] ?? ''}`,
     sourceDocumentId: module.sourceDocumentId,
@@ -333,6 +365,90 @@ function handleInbound(workerId: string, kind: 'text' | 'voice', text: string): 
     transcriptText: wasVoice ? text : null,
     mediaUrl: wasVoice ? 'demo://voice-note' : null,
   });
+
+  const sendDisclosureIfNeeded = () => {
+    if (worker.disclosureSentAt) return;
+    pushMessage(workerId, { direction: 'outbound', type: 'text', bodyText: ES.disclosure(s.org.name) });
+    worker.disclosureSentAt = nowIso();
+  };
+
+  // ── Consent first: ALTA/BAJA always win (mirror of processInbound) ──
+  const keyword = parseConsentKeyword(text);
+  if (keyword === 'baja') {
+    worker.consentStatus = 'opted_out';
+    worker.consentedAt = nowIso();
+    worker.consentMethod = 'whatsapp_keyword';
+    pushMessage(workerId, { direction: 'outbound', type: 'text', bodyText: ES.optOutConfirm });
+    return;
+  }
+  if (keyword === 'alta') {
+    if (worker.consentStatus !== 'opted_in') {
+      worker.consentStatus = 'opted_in';
+      worker.consentedAt = nowIso();
+      worker.consentMethod = 'whatsapp_keyword';
+    }
+    sendDisclosureIfNeeded();
+    pushMessage(workerId, { direction: 'outbound', type: 'text', bodyText: ES.optInConfirm });
+    return;
+  }
+  if (worker.consentStatus === 'opted_out') {
+    pushMessage(workerId, { direction: 'outbound', type: 'text', bodyText: ES.optedOutReminder });
+    return;
+  }
+  if ((worker.consentStatus ?? 'opted_in') === 'pending') {
+    worker.consentStatus = 'opted_in';
+    worker.consentedAt = nowIso();
+    worker.consentMethod = 'whatsapp_keyword';
+  }
+  sendDisclosureIfNeeded();
+
+  // ── Cow care agreement: deliver if queued; ACEPTO signs; else nudge → escalate ──
+  let agreementJustDelivered = false;
+  if (worker.pendingAgreementId && !worker.pendingAgreementSentAt) {
+    const agreement = s.agreements.find((a) => a.id === worker.pendingAgreementId) ?? activeAgreement();
+    pushMessage(workerId, {
+      direction: 'outbound',
+      type: 'text',
+      bodyText: [ES.agreementIntro(s.org.name), '', agreement.textEs].join('\n'),
+    });
+    worker.pendingAgreementSentAt = nowIso();
+    agreementJustDelivered = true;
+  }
+  if (!agreementJustDelivered && worker.pendingAgreementId && worker.pendingAgreementSentAt) {
+    if (isAceptoReply(text)) {
+      const agreement = s.agreements.find((a) => a.id === worker.pendingAgreementId) ?? activeAgreement();
+      s.signatures.push({
+        id: uuid(),
+        orgId: s.org.id,
+        workerId,
+        agreementId: agreement.id,
+        agreementVersion: agreement.version,
+        signedAt: nowIso(),
+        method: 'whatsapp',
+        attestedBy: null,
+        createdAt: nowIso(),
+      });
+      worker.pendingAgreementId = null;
+      worker.pendingAgreementSentAt = null;
+      worker.pendingAgreementNudges = 0;
+      pushMessage(workerId, {
+        direction: 'outbound',
+        type: 'text',
+        bodyText: ES.agreementSigned(agreement.version),
+      });
+      return;
+    }
+    if ((worker.pendingAgreementNudges ?? 0) === 0) {
+      worker.pendingAgreementNudges = 1;
+      pushMessage(workerId, { direction: 'outbound', type: 'text', bodyText: ES.agreementClarify });
+    } else {
+      worker.pendingAgreementId = null;
+      worker.pendingAgreementSentAt = null;
+      worker.pendingAgreementNudges = 0;
+      addEscalation(workerId, text, 'No confirmó el acuerdo de cuidado de las vacas (sin ACEPTO)');
+      pushMessage(workerId, { direction: 'outbound', type: 'text', bodyText: ES.agreementEscalated });
+    }
+  }
 
   const deliveredNow = deliverNotified(workerId);
   const pending = pendingCheck(workerId);
@@ -403,6 +519,7 @@ function handleInbound(workerId: string, kind: 'text' | 'voice', text: string): 
       logEvent(workerId, {
         eventType: 'qa_interaction',
         topic: classifyTopicByKeywords(`${text} ${hit.chunk.headingPath}`),
+        farmTopic: mapToFarmTopic(classifyTopicByKeywords(`${text} ${hit.chunk.headingPath}`), text),
         questionText: text,
         answerText: answer,
         sourceDocumentId: hit.doc.id,
@@ -422,6 +539,7 @@ function workerListItem(w: Row) {
   const e = enrs[0];
   const track = e ? s.tracks.find((t) => t.id === e.trackId) : null;
   const ds = e ? s.deliveries.filter((d) => d.enrollmentId === e.id) : [];
+  const sig = latestSignature(w.id);
   return {
     ...w,
     enrollment: e
@@ -431,6 +549,14 @@ function workerListItem(w: Row) {
           status: e.status,
           modulesAnswered: ds.filter((d) => d.status === 'answered').length,
           modulesTotal: ds.length,
+        }
+      : null,
+    agreement: sig
+      ? {
+          signedAt: sig.signedAt,
+          version: sig.agreementVersion,
+          method: sig.method,
+          renewalDue: renewalDue(new Date(sig.signedAt)),
         }
       : null,
   };
@@ -559,6 +685,14 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
       hiredAt: nowIso(),
       lastInboundAt: null,
       notes: body.notes ?? null,
+      consentStatus: 'pending', // adding a worker is NOT opt-in (Meta policy)
+      consentedAt: null,
+      consentMethod: null,
+      consentAttestedBy: null,
+      disclosureSentAt: null,
+      pendingAgreementId: null,
+      pendingAgreementSentAt: null,
+      pendingAgreementNudges: 0,
       createdAt: nowIso(),
       updatedAt: nowIso(),
     };
@@ -612,6 +746,9 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
         trackName: s.tracks.find((t) => t.id === e.trackId)?.name ?? '',
         status: e.status,
         startedAt: e.startedAt,
+        signedOffAt: e.signedOffAt ?? null,
+        signedOffName: e.signedOffName ?? null,
+        signedOffRole: e.signedOffRole ?? null,
         certificateUrl: null, // PDF generation lives on the real backend
         deliveries: s.deliveries
           .filter((d) => d.enrollmentId === e.id)
@@ -635,13 +772,100 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
       .sort((a, b) => ts(b.occurredAt) - ts(a.occurredAt))
       .slice(0, 300)
       .map((e) => ({ ...e, sourceDocumentTitle: e.sourceDocumentId ? (docTitle.get(e.sourceDocumentId) ?? null) : null }));
-    return { ...worker, enrollments, events };
+    const sig = latestSignature(worker.id);
+    const agreementStatus = {
+      signed: !!sig,
+      signedAt: sig?.signedAt ?? null,
+      version: sig?.agreementVersion ?? null,
+      method: sig?.method ?? null,
+      renewalDue: sig ? renewalDue(new Date(sig.signedAt)) : false,
+      pendingSince: worker.pendingAgreementSentAt ?? null,
+    };
+    return { ...worker, agreementStatus, enrollments, events };
   }
   if (seg[1] === 'workers' && seg[2] && method === 'PATCH') {
     const worker = s.workers.find((w) => w.id === seg[2]) ?? fail(404, 'Worker not found');
     Object.assign(worker, body, { updatedAt: nowIso() });
     return worker;
   }
+
+  // ── consent / agreement / sign-off (compliance) ──
+  if (seg[1] === 'workers' && seg[2] && seg[3] === 'consent' && seg[4] === 'paper' && method === 'POST') {
+    const worker = s.workers.find((w) => w.id === seg[2]) ?? fail(404, 'Worker not found');
+    if (!body.attestedBy || String(body.attestedBy).trim().length < 2) {
+      fail(400, 'Type your name to attest the paper consent form');
+    }
+    if (worker.consentStatus === 'opted_out') {
+      fail(409, 'This worker opted out on WhatsApp (BAJA). Only the worker can rejoin, by texting ALTA.');
+    }
+    worker.consentStatus = 'opted_in';
+    worker.consentMethod = 'paper_form';
+    worker.consentedAt = nowIso();
+    worker.consentAttestedBy = String(body.attestedBy).trim();
+    return worker;
+  }
+  if (route === 'GET /api/agreement') return activeAgreement();
+  if (route === 'PATCH /api/agreement') {
+    const current = activeAgreement();
+    if (body.textEs && body.textEs !== current.textEs) {
+      current.active = false;
+      const next = {
+        id: uuid(), orgId: s.org.id, type: 'cow_care', version: current.version + 1,
+        textEs: body.textEs, active: true, createdAt: nowIso(),
+      };
+      s.agreements.push(next);
+      return next;
+    }
+    return current;
+  }
+  if (seg[1] === 'workers' && seg[2] && seg[3] === 'agreement' && seg[4] === 'send' && method === 'POST') {
+    const worker = s.workers.find((w) => w.id === seg[2]) ?? fail(404, 'Worker not found');
+    if ((worker.consentStatus ?? 'opted_in') !== 'opted_in') {
+      fail(409, 'Worker has not opted in to WhatsApp messages — the agreement cannot be sent.');
+    }
+    const agreement = activeAgreement();
+    worker.pendingAgreementId = agreement.id;
+    worker.pendingAgreementNudges = 0;
+    if (windowState(dateOf(worker.lastInboundAt), new Date()) === 'open') {
+      worker.pendingAgreementSentAt = nowIso();
+      pushMessage(worker.id, {
+        direction: 'outbound',
+        type: 'text',
+        bodyText: [ES.agreementIntro(s.org.name), '', agreement.textEs].join('\n'),
+      });
+      return { outcome: 'sent' };
+    }
+    worker.pendingAgreementSentAt = null;
+    return { outcome: 'queued' };
+  }
+  if (seg[1] === 'workers' && seg[2] && seg[3] === 'agreement' && seg[4] === 'paper' && method === 'POST') {
+    const worker = s.workers.find((w) => w.id === seg[2]) ?? fail(404, 'Worker not found');
+    if (!body.attestedBy || String(body.attestedBy).trim().length < 2) {
+      fail(400, 'Type your name to attest the paper signature');
+    }
+    const agreement = activeAgreement();
+    const sig = {
+      id: uuid(), orgId: s.org.id, workerId: worker.id, agreementId: agreement.id,
+      agreementVersion: agreement.version, signedAt: nowIso(), method: 'paper',
+      attestedBy: String(body.attestedBy).trim(), createdAt: nowIso(),
+    };
+    s.signatures.push(sig);
+    worker.pendingAgreementId = null;
+    worker.pendingAgreementSentAt = null;
+    worker.pendingAgreementNudges = 0;
+    return sig;
+  }
+  if (seg[1] === 'enrollments' && seg[2] && seg[3] === 'signoff' && method === 'POST') {
+    const enr = s.enrollments.find((e) => e.id === seg[2]) ?? fail(404, 'Enrollment not found');
+    if (enr.status !== 'completed') fail(409, 'Only completed tracks can be signed off');
+    if (enr.signedOffAt) fail(409, 'Already signed off');
+    enr.signedOffAt = nowIso();
+    enr.signedOffName = s.user.name;
+    enr.signedOffRole = s.user.role;
+    return enr;
+  }
+  if (route === 'GET /api/alerts') return { templatePausedAt: null, templatePauseReason: null };
+  if (route === 'POST /api/alerts/templates/acknowledge') return { ok: true };
 
   // ── tracks & modules ──
   if (route === 'GET /api/tracks') {
@@ -747,13 +971,29 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
     };
     const docTitle = new Map(s.documents.map((d) => [d.id, d.title]));
     const lines = [
-      'event_id,occurred_at_utc,employee,phone,event_type,topic,confidence,question,answer,source_document',
+      'event_id,occurred_at_utc,employee,phone,event_type,topic,farm_topic,confidence,question,answer,source_document,consent_status,consent_date_utc,cow_care_agreement,supervisor_sign_off',
       ...inRange.map((e) => {
         const w = s.workers.find((w) => w.id === e.workerId);
+        const sig = w ? latestSignature(w.id) : null;
+        const signOffs = w
+          ? s.enrollments
+              .filter((en) => en.workerId === w.id && en.status === 'completed')
+              .map((en) => {
+                const trackName = s.tracks.find((t) => t.id === en.trackId)?.name ?? '';
+                return en.signedOffAt
+                  ? `${trackName}: confirmed by ${en.signedOffName ?? ''} (${en.signedOffRole ?? ''}) ${String(en.signedOffAt).slice(0, 10)}`
+                  : `${trackName}: completed, unconfirmed`;
+              })
+              .join('; ')
+          : '';
         return [
           e.id, e.occurredAt, w?.name ?? '', w?.phoneE164 ?? '', e.eventType, e.topic,
+          e.farmTopic ?? 'none',
           e.confidence ?? '', e.questionText ?? '', e.answerText ?? '',
           e.sourceDocumentId ? (docTitle.get(e.sourceDocumentId) ?? '') : '',
+          w?.consentStatus ?? '', w?.consentedAt ?? '',
+          sig ? `signed v${sig.agreementVersion} ${String(sig.signedAt).slice(0, 10)} via ${sig.method}` : 'unsigned',
+          signOffs,
         ].map(esc).join(',');
       }),
     ];
@@ -794,7 +1034,14 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
     return s.workers
       .filter((w) => w.status === 'active')
       .sort((a, b) => a.name.localeCompare(b.name))
-      .map((w) => ({ id: w.id, name: w.name, phoneE164: w.phoneE164, lastInboundAt: w.lastInboundAt }));
+      .map((w) => ({
+        id: w.id,
+        name: w.name,
+        phoneE164: w.phoneE164,
+        lastInboundAt: w.lastInboundAt,
+        consentStatus: w.consentStatus ?? 'opted_in',
+        pendingAgreement: !!(w.pendingAgreementId && w.pendingAgreementSentAt),
+      }));
   }
   if (route === 'POST /api/simulator/inbound') {
     handleInbound(body.workerId, body.kind, String(body.text ?? '').trim());

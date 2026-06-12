@@ -22,6 +22,10 @@ export const orgs = pgTable('orgs', {
   locale: text('locale').notNull().default('es'),
   herdSize: integer('herd_size'),
   settings: jsonb('settings').notNull().default({}),
+  // Set when a template delivery fails for a template/category-policy reason;
+  // blocks ALL template sends for the org until an owner acknowledges.
+  templateSendsPausedAt: timestamp('template_sends_paused_at', { withTimezone: true }),
+  templatePauseReason: text('template_pause_reason'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -43,6 +47,11 @@ export const users = pgTable(
   (t) => [uniqueIndex('users_email_uq').on(t.email), index('users_org_idx').on(t.orgId)],
 );
 
+export const CONSENT_STATUSES = ['pending', 'opted_in', 'opted_out'] as const;
+export type ConsentStatus = (typeof CONSENT_STATUSES)[number];
+export const CONSENT_METHODS = ['whatsapp_keyword', 'paper_form', 'imported'] as const;
+export type ConsentMethod = (typeof CONSENT_METHODS)[number];
+
 export const workers = pgTable(
   'workers',
   {
@@ -57,10 +66,28 @@ export const workers = pgTable(
     hiredAt: timestamp('hired_at', { withTimezone: true }),
     lastInboundAt: timestamp('last_inbound_at', { withTimezone: true }),
     notes: text('notes'),
+    // WhatsApp opt-in state (Meta policy): no business-initiated sends unless
+    // 'opted_in'. consented_at/consent_method record the latest transition.
+    consentStatus: text('consent_status', { enum: CONSENT_STATUSES })
+      .notNull()
+      .default('pending'),
+    consentedAt: timestamp('consented_at', { withTimezone: true }),
+    consentMethod: text('consent_method', { enum: CONSENT_METHODS }),
+    consentAttestedBy: text('consent_attested_by'),
+    // One-time first-contact disclosure (privacy/monitoring notice).
+    disclosureSentAt: timestamp('disclosure_sent_at', { withTimezone: true }),
+    // Cow care agreement awaiting the worker's ACEPTO reply.
+    pendingAgreementId: uuid('pending_agreement_id'),
+    pendingAgreementSentAt: timestamp('pending_agreement_sent_at', { withTimezone: true }),
+    pendingAgreementNudges: integer('pending_agreement_nudges').notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [uniqueIndex('workers_phone_uq').on(t.phoneE164), index('workers_org_idx').on(t.orgId)],
+  (t) => [
+    uniqueIndex('workers_phone_uq').on(t.phoneE164),
+    index('workers_org_idx').on(t.orgId),
+    index('workers_consent_idx').on(t.orgId, t.consentStatus),
+  ],
 );
 
 export const sopDocuments = pgTable(
@@ -126,6 +153,17 @@ export const onboardingTracks = pgTable(
   (t) => [index('onboarding_tracks_org_idx').on(t.orgId)],
 );
 
+export const FARM_TOPICS = [
+  'stockmanship_general',
+  'preweaned_calf',
+  'non_ambulatory',
+  'euthanasia',
+  'fitness_to_transport',
+  'safety_other',
+  'none',
+] as const;
+export type FarmTopic = (typeof FARM_TOPICS)[number];
+
 export const modules = pgTable(
   'modules',
   {
@@ -139,6 +177,8 @@ export const modules = pgTable(
     orderIndex: integer('order_index').notNull(),
     dayOffset: integer('day_offset').notNull().default(0),
     sendHourLocal: integer('send_hour_local').notNull().default(7),
+    // FARM Animal Care v5 continuing-education area, set by the manager.
+    farmTopic: text('farm_topic', { enum: FARM_TOPICS }).notNull().default('none'),
     title: text('title').notNull(),
     bodyEs: text('body_es').notNull(),
     checkQuestionEs: text('check_question_es').notNull(),
@@ -170,6 +210,12 @@ export const enrollments = pgTable(
     status: text('status', { enum: ['active', 'completed', 'paused'] })
       .notNull()
       .default('active'),
+    // Supervisor sign-off ("Confirm completion"): name/role stored as text so
+    // the record survives user deletion.
+    signedOffAt: timestamp('signed_off_at', { withTimezone: true }),
+    signedOffBy: uuid('signed_off_by').references(() => users.id, { onDelete: 'set null' }),
+    signedOffName: text('signed_off_name'),
+    signedOffRole: text('signed_off_role'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -251,6 +297,8 @@ export const messages = pgTable(
     audioReplyUrl: text('audio_reply_url'),
     twilioSid: text('twilio_sid'),
     status: text('status').notNull().default('received'),
+    // Twilio/Meta error code from the delivery status callback, if any.
+    errorCode: text('error_code'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -282,6 +330,7 @@ export const trainingEvents = pgTable(
     occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
     eventType: text('event_type', { enum: TRAINING_EVENT_TYPES }).notNull(),
     topic: text('topic').notNull().default('Otro'),
+    farmTopic: text('farm_topic', { enum: FARM_TOPICS }).notNull().default('none'),
     questionText: text('question_text'),
     answerText: text('answer_text'),
     sourceDocumentId: uuid('source_document_id').references(() => sopDocuments.id, {
@@ -295,6 +344,53 @@ export const trainingEvents = pgTable(
   (t) => [
     index('training_events_org_time_idx').on(t.orgId, t.occurredAt),
     index('training_events_worker_idx').on(t.workerId, t.occurredAt),
+  ],
+);
+
+export const agreements = pgTable(
+  'agreements',
+  {
+    id: id(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    type: text('type', { enum: ['cow_care'] }).notNull().default('cow_care'),
+    version: integer('version').notNull().default(1),
+    textEs: text('text_es').notNull(),
+    active: boolean('active').notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex('agreements_org_type_version_uq').on(t.orgId, t.type, t.version),
+    index('agreements_org_idx').on(t.orgId),
+  ],
+);
+
+export const agreementSignatures = pgTable(
+  'agreement_signatures',
+  {
+    id: id(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    workerId: uuid('worker_id')
+      .notNull()
+      .references(() => workers.id, { onDelete: 'cascade' }),
+    agreementId: uuid('agreement_id')
+      .notNull()
+      .references(() => agreements.id, { onDelete: 'cascade' }),
+    agreementVersion: integer('agreement_version').notNull(),
+    signedAt: timestamp('signed_at', { withTimezone: true }).notNull().defaultNow(),
+    method: text('method', { enum: ['whatsapp', 'paper'] }).notNull(),
+    // Manager attestation (their typed name) for paper signatures.
+    attestedBy: text('attested_by'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index('agreement_signatures_org_idx').on(t.orgId),
+    index('agreement_signatures_worker_idx').on(t.workerId, t.signedAt),
   ],
 );
 
@@ -363,3 +459,5 @@ export type Message = typeof messages.$inferSelect;
 export type TrainingEvent = typeof trainingEvents.$inferSelect;
 export type Escalation = typeof escalations.$inferSelect;
 export type AuditExport = typeof auditExports.$inferSelect;
+export type Agreement = typeof agreements.$inferSelect;
+export type AgreementSignature = typeof agreementSignatures.$inferSelect;

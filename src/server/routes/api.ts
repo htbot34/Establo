@@ -7,10 +7,12 @@ import { z } from 'zod';
 import { requireAuth } from '../auth/session.js';
 import { getDb } from '../db/client.js';
 import {
+  agreementSignatures,
   auditExports,
   conversations,
   enrollments,
   escalations,
+  FARM_TOPICS,
   messages,
   moduleDeliveries,
   modules,
@@ -25,10 +27,21 @@ import { config } from '../config.js';
 import { isValidE164 } from '../lib/phone.js';
 import { absPath, saveBuffer } from '../lib/storage.js';
 import { dispatch } from '../jobs/boss.js';
+import {
+  agreementStatusFor,
+  getOrCreateActiveAgreement,
+  recordSignature,
+  renewalDue,
+  requestAgreementSignature,
+  updateAgreementText,
+} from '../services/agreements.js';
 import { certificateRelPath } from '../services/certificates.js';
+import { consentFormHtml } from '../services/consentForm.js';
+import { optInWorker } from '../services/consent.js';
 import { enrollWorker, runDripTick } from '../services/drip.js';
 import { isImageMime } from '../services/ingestion.js';
 import { anthropicAvailable, extractJson, generateText } from '../services/llm.js';
+import { resumeTemplateSends } from '../services/templateHealth.js';
 import { generateWorkerTranscriptPdf } from '../services/transcripts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -300,9 +313,20 @@ export function registerApiRoutes(app: FastifyInstance): void {
     for (const e of enrs) {
       if (!latestEnrByWorker.has(e.enr.workerId)) latestEnrByWorker.set(e.enr.workerId, e);
     }
+    // Latest cow care agreement signature per worker (for the Agreement column).
+    const sigs = await db
+      .select()
+      .from(agreementSignatures)
+      .where(eq(agreementSignatures.orgId, orgId))
+      .orderBy(desc(agreementSignatures.signedAt));
+    const sigByWorker = new Map<string, (typeof sigs)[number]>();
+    for (const s of sigs) {
+      if (!sigByWorker.has(s.workerId)) sigByWorker.set(s.workerId, s);
+    }
     return rows.map((w) => {
       const e = latestEnrByWorker.get(w.id);
       const agg = e ? aggByEnr.get(e.enr.id) : undefined;
+      const sig = sigByWorker.get(w.id);
       return {
         ...w,
         enrollment: e
@@ -312,6 +336,14 @@ export function registerApiRoutes(app: FastifyInstance): void {
               status: e.enr.status,
               modulesAnswered: Number(agg?.answered ?? 0),
               modulesTotal: Number(agg?.total ?? 0),
+            }
+          : null,
+        agreement: sig
+          ? {
+              signedAt: sig.signedAt,
+              version: sig.agreementVersion,
+              method: sig.method,
+              renewalDue: renewalDue(sig.signedAt),
             }
           : null,
       };
@@ -396,6 +428,9 @@ export function registerApiRoutes(app: FastifyInstance): void {
         trackName,
         status: enr.status,
         startedAt: enr.startedAt,
+        signedOffAt: enr.signedOffAt,
+        signedOffName: enr.signedOffName,
+        signedOffRole: enr.signedOffRole,
         certificateUrl:
           enr.status === 'completed' && fs.existsSync(absPath(certRel))
             ? `/api/files/${certRel}`
@@ -423,9 +458,141 @@ export function registerApiRoutes(app: FastifyInstance): void {
 
     return {
       ...worker,
+      agreementStatus: await agreementStatusFor(db, worker),
       enrollments: enrollmentDetails,
       events: events.map(({ ev, docTitle }) => ({ ...ev, sourceDocumentTitle: docTitle })),
     };
+  });
+
+  // ── Consent (Meta WhatsApp opt-in policy) ─────────────────────────────────
+  /**
+   * "Consent collected on paper": only valid manual opt-in path — the manager
+   * must type their own name as attestation. Workers otherwise opt themselves
+   * in by messaging the number (ALTA or any first message).
+   */
+  app.post<{ Params: { id: string } }>('/api/workers/:id/consent/paper', async (req, reply) => {
+    const body = z.object({ attestedBy: z.string().min(2).max(120) }).safeParse(req.body);
+    if (!body.success) {
+      return reply.code(400).send({ error: 'Type your name to attest the paper consent form' });
+    }
+    const db = getDb();
+    const [worker] = await db
+      .select()
+      .from(workers)
+      .where(and(eq(workers.id, req.params.id), eq(workers.orgId, req.authOrg!.id)));
+    if (!worker) return reply.code(404).send({ error: 'Worker not found' });
+    if (worker.consentStatus === 'opted_out') {
+      return reply.code(409).send({
+        error:
+          'This worker opted out on WhatsApp (BAJA). Only the worker can rejoin, by texting ALTA.',
+      });
+    }
+    await optInWorker(db, worker.id, 'paper_form', body.data.attestedBy.trim());
+    const [updated] = await db.select().from(workers).where(eq(workers.id, worker.id));
+    return updated;
+  });
+
+  /** Printable bilingual consent form for hire paperwork. */
+  app.get('/api/consent-form', async (req, reply) => {
+    return reply.type('text/html').send(consentFormHtml(req.authOrg!.name));
+  });
+
+  // ── Cow care agreement ────────────────────────────────────────────────────
+  app.get('/api/agreement', async (req) => {
+    const agreement = await getOrCreateActiveAgreement(getDb(), req.authOrg!.id);
+    return agreement;
+  });
+
+  app.patch('/api/agreement', async (req, reply) => {
+    const body = z.object({ textEs: z.string().min(40).max(6000) }).safeParse(req.body);
+    if (!body.success) {
+      return reply.code(400).send({ error: 'Agreement text must be 40–6000 characters' });
+    }
+    const agreement = await updateAgreementText(getDb(), req.authOrg!.id, body.data.textEs);
+    return agreement;
+  });
+
+  app.post<{ Params: { id: string } }>('/api/workers/:id/agreement/send', async (req, reply) => {
+    const db = getDb();
+    const [worker] = await db
+      .select()
+      .from(workers)
+      .where(and(eq(workers.id, req.params.id), eq(workers.orgId, req.authOrg!.id)));
+    if (!worker) return reply.code(404).send({ error: 'Worker not found' });
+    const outcome = await requestAgreementSignature(db, worker.id);
+    if (outcome === 'blocked') {
+      return reply.code(409).send({
+        error: 'Worker has not opted in to WhatsApp messages — the agreement cannot be sent.',
+      });
+    }
+    return { outcome };
+  });
+
+  app.post<{ Params: { id: string } }>('/api/workers/:id/agreement/paper', async (req, reply) => {
+    const body = z.object({ attestedBy: z.string().min(2).max(120) }).safeParse(req.body);
+    if (!body.success) {
+      return reply.code(400).send({ error: 'Type your name to attest the paper signature' });
+    }
+    const db = getDb();
+    const [worker] = await db
+      .select()
+      .from(workers)
+      .where(and(eq(workers.id, req.params.id), eq(workers.orgId, req.authOrg!.id)));
+    if (!worker) return reply.code(404).send({ error: 'Worker not found' });
+    const agreement = await getOrCreateActiveAgreement(db, worker.orgId);
+    const sig = await recordSignature(db, {
+      orgId: worker.orgId,
+      workerId: worker.id,
+      agreementId: agreement.id,
+      agreementVersion: agreement.version,
+      method: 'paper',
+      attestedBy: body.data.attestedBy.trim(),
+    });
+    return sig;
+  });
+
+  // ── Supervisor sign-off on completed onboarding tracks ───────────────────
+  app.post<{ Params: { id: string } }>('/api/enrollments/:id/signoff', async (req, reply) => {
+    const db = getDb();
+    const [enr] = await db
+      .select()
+      .from(enrollments)
+      .where(and(eq(enrollments.id, req.params.id), eq(enrollments.orgId, req.authOrg!.id)));
+    if (!enr) return reply.code(404).send({ error: 'Enrollment not found' });
+    if (enr.status !== 'completed') {
+      return reply.code(409).send({ error: 'Only completed tracks can be signed off' });
+    }
+    if (enr.signedOffAt) return reply.code(409).send({ error: 'Already signed off' });
+    const [updated] = await db
+      .update(enrollments)
+      .set({
+        signedOffAt: new Date(),
+        signedOffBy: req.authUser!.id,
+        signedOffName: req.authUser!.name,
+        signedOffRole: req.authUser!.role,
+        updatedAt: new Date(),
+      })
+      .where(eq(enrollments.id, enr.id))
+      .returning();
+    return updated;
+  });
+
+  // ── Alerts (template-delivery health banner) ──────────────────────────────
+  app.get('/api/alerts', async (req) => {
+    const db = getDb();
+    const [org] = await db.select().from(orgs).where(eq(orgs.id, req.authOrg!.id));
+    return {
+      templatePausedAt: org.templateSendsPausedAt,
+      templatePauseReason: org.templatePauseReason,
+    };
+  });
+
+  app.post('/api/alerts/templates/acknowledge', async (req, reply) => {
+    if (req.authUser!.role !== 'owner') {
+      return reply.code(403).send({ error: 'Only the owner can acknowledge this alert' });
+    }
+    await resumeTemplateSends(getDb(), req.authOrg!.id);
+    return { ok: true };
   });
 
   app.post<{ Params: { id: string } }>('/api/workers/:id/enroll', async (req, reply) => {
@@ -556,6 +723,7 @@ export function registerApiRoutes(app: FastifyInstance): void {
     checkCorrectIndex: z.number().int().min(0).max(2),
     dayOffset: z.number().int().min(0).max(60),
     sendHourLocal: z.number().int().min(5).max(20).default(7),
+    farmTopic: z.enum(FARM_TOPICS).default('none'),
   });
 
   app.post<{ Params: { id: string } }>('/api/tracks/:id/modules', async (req, reply) => {
