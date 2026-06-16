@@ -219,6 +219,15 @@ describe('reviewer demo script — retrieval and routing', () => {
     expect(reply.bodyText).not.toContain('📄 Fuente');
   });
 
+  it('English question → Spanish-only nudge, no citation and no escalation', async () => {
+    const before = (await demoFetch('/api/escalations')).length;
+    const reply = await ask('how long do I leave the pre-dip on the teat?');
+    expect(reply.bodyText).toContain('solo contesto en español');
+    expect(reply.bodyText).not.toContain('📄 Fuente');
+    const after = await demoFetch('/api/escalations');
+    expect(after.length).toBe(before); // a normal interaction, never a knowledge gap
+  });
+
   it('colostrum question → the 4-litros / 22% Brix chunk', async () => {
     const reply = await ask('¿cuánto calostro le doy a un becerro recién nacido?');
     expect(reply.bodyText).toContain('4 litros');

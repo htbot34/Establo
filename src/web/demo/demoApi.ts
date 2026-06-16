@@ -18,11 +18,13 @@ import {
 } from '../../server/services/consentKeywords';
 import { mapToFarmTopic } from '../../server/services/farmTopics';
 import { matchForbiddenTopic } from '../../server/services/guards';
+import { looksSpanish } from '../../server/services/language';
 import { routeInbound } from '../../server/services/router';
 import { classifyTopicByKeywords } from '../../server/services/topics';
 import { windowState } from '../../server/services/window';
 import { computeScheduledFor } from '../../server/lib/time';
 import fixtureJson from './fixture.json';
+import audioManifestJson from './audioManifest.json';
 
 type Row = Record<string, any>;
 
@@ -73,6 +75,18 @@ const ts = (v: string | null | undefined) => (v ? new Date(v).getTime() : 0);
 const dateOf = (v: string | null | undefined) => (v ? new Date(v) : null);
 
 const SILENCE_URL = './demo-silence.mp3';
+
+// Optional pre-rendered demo audio (scripts/render-demo-audio.ts writes this
+// when an OPENAI_API_KEY is present at build time). Empty by default → the demo
+// serves the silent placeholder, exactly as before. Real entries are relative
+// paths like "./demo-audio/module-<id>.ogg".
+const audioManifest = audioManifestJson as Record<string, string>;
+const DEMO_AUDIO_PREFIX = './demo-audio/';
+
+/** Pre-rendered lesson audio for a module, or the silent placeholder. */
+function moduleAudioUrl(moduleId: string): string {
+  return audioManifest[`module:${moduleId}`] ?? SILENCE_URL;
+}
 
 function fail(status: number, message: string): never {
   throw new ApiError(message, status);
@@ -248,7 +262,7 @@ function deliverModule(delivery: Row): boolean {
     ES.checkPrompt(module.checkQuestionEs, module.checkOptionsEs),
   ].join('\n');
   pushMessage(enrollment.workerId, { direction: 'outbound', type: 'text', bodyText: text });
-  pushMessage(enrollment.workerId, { direction: 'outbound', type: 'voice', audioReplyUrl: SILENCE_URL });
+  pushMessage(enrollment.workerId, { direction: 'outbound', type: 'voice', audioReplyUrl: moduleAudioUrl(module.id) });
   delivery.status = 'sent';
   delivery.sentAt = nowIso();
   logEvent(enrollment.workerId, {
@@ -479,6 +493,20 @@ function handleInbound(workerId: string, kind: 'text' | 'voice', text: string): 
       replyText(ES.helpEscalated);
       return;
     case 'question': {
+      // Mirror of processInbound: a non-Spanish free-form question gets the
+      // Spanish-only nudge (a normal interaction, not an escalation) instead of
+      // running retrieval.
+      if (!looksSpanish(text)) {
+        replyText(ES.spanishOnly);
+        logEvent(workerId, {
+          eventType: 'qa_interaction',
+          topic: 'Otro',
+          questionText: text,
+          answerText: ES.spanishOnly,
+          confidence: null,
+        });
+        return;
+      }
       const guard = matchForbiddenTopic(text);
       if (guard) {
         replyText(ES.forbidden);
@@ -563,7 +591,11 @@ function workerListItem(w: Row) {
 }
 
 function rewriteAudio(m: Row): Row {
-  return { ...m, audioReplyUrl: m.audioReplyUrl ? SILENCE_URL : null };
+  if (!m.audioReplyUrl) return { ...m, audioReplyUrl: null };
+  // Pre-rendered demo audio is real and playable; everything else (seed TTS
+  // placeholders, runtime replies) collapses to the silent placeholder.
+  if (String(m.audioReplyUrl).startsWith(DEMO_AUDIO_PREFIX)) return m;
+  return { ...m, audioReplyUrl: SILENCE_URL };
 }
 
 // ── the dispatcher ───────────────────────────────────────────────────────────

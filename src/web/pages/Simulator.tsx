@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, IS_DEMO, timeAgo } from '../api';
 import { Button, Card, consentBadge, PageHeader, Select, Spinner } from '../components';
+import { looksSpanish } from '../../server/services/language';
+
+/** Spanish starter questions drawn from the seeded SOPs (tap to fill the box). */
+const SUGGESTED_QUESTIONS = [
+  '¿qué hago si una vaca tiene mastitis?',
+  '¿cuánto tiempo dejo el pre-dip?',
+  '¿cuántos chorros saco en el despunte?',
+  '¿cuánto calostro le doy a una becerra recién nacida?',
+  '¿qué pasa si mezclo cloro con ácido?',
+  '¿qué hago con una vaca que se cayó y no se para?',
+];
 
 interface SimWorker {
   id: string;
@@ -39,6 +50,9 @@ export default function Simulator() {
   const [mode, setMode] = useState<'text' | 'voice'>('text');
   const [sending, setSending] = useState(false);
   const [dripNote, setDripNote] = useState('');
+  // Reviewer-facing nudge: set when the last message a reviewer sent wasn't
+  // Spanish, so they understand why the worker assistant answered in Spanish.
+  const [nonSpanishHint, setNonSpanishHint] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastCount = useRef(0);
 
@@ -57,6 +71,7 @@ export default function Simulator() {
 
   useEffect(() => {
     setConv(null);
+    setNonSpanishHint(false);
     lastCount.current = 0;
     void poll();
     const t = setInterval(() => void poll(), 1500);
@@ -73,12 +88,16 @@ export default function Simulator() {
 
   async function send() {
     if (!text.trim() || !workerId) return;
+    const outgoing = text.trim();
     setSending(true);
     try {
       await api('/api/simulator/inbound', {
         method: 'POST',
-        body: { workerId, kind: mode, text: text.trim() },
+        body: { workerId, kind: mode, text: outgoing },
       });
+      // The worker assistant only answers in Spanish; surface that to the
+      // (English-speaking) reviewer when they just typed something else.
+      setNonSpanishHint(!looksSpanish(outgoing));
       setText('');
       setTimeout(() => void poll(), 600);
     } finally {
@@ -200,7 +219,7 @@ export default function Simulator() {
                       )}
                       <p className="whitespace-pre-wrap">{m.bodyText ?? m.transcriptText ?? ''}</p>
                       {m.audioReplyUrl &&
-                        (IS_DEMO ? (
+                        (IS_DEMO && !m.audioReplyUrl.startsWith('./demo-audio/') ? (
                           <div className="mt-1 w-fit rounded-full bg-stone-100 px-2.5 py-1 text-[10px] text-stone-500">
                             🔊 respuesta de voz — silenciada en este demo (el sistema real envía audio TTS)
                           </div>
@@ -220,6 +239,17 @@ export default function Simulator() {
               )}
             </div>
             <div className="space-y-2 bg-stone-100 px-3 py-2.5">
+              <div className="flex flex-wrap gap-1">
+                {SUGGESTED_QUESTIONS.map((q) => (
+                  <button
+                    key={q}
+                    onClick={() => setText(q)}
+                    className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-800 hover:bg-emerald-100"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
               <div className="flex gap-1 text-xs">
                 <button
                   onClick={() => setMode('text')}
@@ -261,13 +291,18 @@ export default function Simulator() {
                 </button>
               </div>
               <p className="text-[10px] text-stone-400">
-                Prueba: “¿qué hago si una vaca tiene mastitis?” · “¿cuánto tiempo dejo el pre-dip?” ·
-                “¿me puedes subir el sueldo?” · “hola” · con una lección pendiente responde “2” ·
-                consentimiento: “ALTA” (alta + aviso de privacidad) / “BAJA” (baja) · con un acuerdo
-                pendiente responde “ACEPTO” (firma)
+                Tap a question above, or try: “¿me puedes subir el sueldo?” (refusal) · “hola” ·
+                with a pending lesson reply “2” · consent “ALTA” / “BAJA” · with a pending
+                agreement reply “ACEPTO”.
               </p>
             </div>
           </div>
+          {nonSpanishHint && (
+            <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              The worker assistant operates in Spanish — it just replied with a short
+              Spanish-only nudge. Try a suggested question below the chat (or type in Spanish).
+            </p>
+          )}
         </div>
       </div>
     </div>

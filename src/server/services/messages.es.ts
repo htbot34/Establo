@@ -22,6 +22,9 @@ export const ES = {
   imageNotSupported:
     'Por ahora no puedo ver fotos. 📷 Mándame tu pregunta por texto o por audio y con gusto te ayudo.',
 
+  spanishOnly:
+    'Por ahora solo contesto en español 🙏. Escribe tu pregunta en español y con gusto te ayudo.',
+
   slowDown: 'Vas muy rápido 😅 Espera un momentito y vuelve a escribirme.',
 
   checkCorrect: '✅ ¡Correcto! Muy bien.',

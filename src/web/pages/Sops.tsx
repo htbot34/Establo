@@ -85,9 +85,10 @@ export default function Sops() {
 
       {IS_DEMO && (
         <Card className="mb-5 border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          Document upload and OCR run on the real backend — this hosted demo ships with the five
-          sample SOPs below (browse their extracted chunks with “View text”). Clone the repo and
-          run <code className="rounded bg-amber-100 px-1">pnpm dev</code> to ingest your own.
+          Document upload and OCR run on the real backend — this hosted demo ships with the{' '}
+          {docs ? `${docs.length} ` : ''}sample SOPs below (browse their extracted chunks with
+          “View text”). Clone the repo and run{' '}
+          <code className="rounded bg-amber-100 px-1">pnpm dev</code> to ingest your own.
         </Card>
       )}
       <Card

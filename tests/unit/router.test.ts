@@ -86,6 +86,22 @@ describe('matchForbiddenTopic (hard guard)', () => {
   it('catches veterinary dosing', () => {
     expect(matchForbiddenTopic('¿cuál es la dosis de penicilina?')?.category).toBe('medical_dosing');
   });
+  it('catches bare pay-stem questions (pagan/paga/pago/pagar/págame)', () => {
+    expect(matchForbiddenTopic('¿cuánto pagan aquí?')?.category).toBe('employment');
+    expect(matchForbiddenTopic('no me pagan bien')?.category).toBe('employment');
+    expect(matchForbiddenTopic('¿cuándo pagan?')?.category).toBe('employment');
+    expect(matchForbiddenTopic('¿cuánto pagas la hora?')?.category).toBe('employment');
+    expect(matchForbiddenTopic('quiero que me paguen lo de la semana')?.category).toBe('employment');
+    expect(matchForbiddenTopic('págame lo que me deben')?.category).toBe('employment');
+    expect(matchForbiddenTopic('todavía no me pagaron')?.category).toBe('employment');
+    expect(matchForbiddenTopic('¿cuándo es el pago?')?.category).toBe('employment');
+  });
+  it('does not false-match "página" or "apagar" on the pay stem', () => {
+    expect(matchForbiddenTopic('mira la página 3 del manual')).toBeNull();
+    expect(matchForbiddenTopic('¿en qué página está la rutina de ordeño?')).toBeNull();
+    expect(matchForbiddenTopic('¿cómo apago la bomba de vacío?')).toBeNull();
+    expect(matchForbiddenTopic('apaga la luz de la sala')).toBeNull();
+  });
   it('lets normal SOP questions through', () => {
     expect(matchForbiddenTopic('¿cuánto tiempo dejo el pre-dip?')).toBeNull();
     expect(matchForbiddenTopic('¿cómo muevo las vacas a la sala?')).toBeNull();
