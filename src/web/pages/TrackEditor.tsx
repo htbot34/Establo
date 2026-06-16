@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
+import { WORKER_ROLES, WORKER_ROLE_LABELS } from '../../server/services/roles';
 import {
   Button,
   Card,
@@ -20,12 +21,22 @@ interface ModuleRow {
   dayOffset: number;
   sendHourLocal: number;
   farmTopic?: string;
+  appliesToRoles?: string[] | null;
   title: string;
   bodyEs: string;
   checkQuestionEs: string;
   checkOptionsEs: string[];
   checkCorrectIndex: number;
 }
+
+/** Short Spanish role labels for the per-module chips. */
+const ROLE_SHORT: Record<string, string> = {
+  ordeno: 'Ordeño',
+  becerras: 'Becerras',
+  alimentacion: 'Alimentación',
+  salud_hato: 'Salud del hato',
+  general: 'General',
+};
 
 /** FARM Animal Care v5 continuing-education areas (audit pack groups by these). */
 const FARM_TOPIC_OPTIONS = [
@@ -70,6 +81,7 @@ const EMPTY_MODULE = {
   dayOffset: 0,
   sendHourLocal: 7,
   farmTopic: 'none',
+  appliesToRoles: [] as string[],
 };
 
 export default function TrackEditor() {
@@ -108,6 +120,7 @@ export default function TrackEditor() {
             dayOffset: mod.dayOffset,
             sendHourLocal: mod.sendHourLocal,
             farmTopic: mod.farmTopic ?? 'none',
+            appliesToRoles: [...(mod.appliesToRoles ?? [])],
           },
     );
   }
@@ -195,6 +208,20 @@ export default function TrackEditor() {
                       {FARM_TOPIC_SHORT[m.farmTopic] ?? m.farmTopic}
                     </span>
                   )}
+                  {!m.appliesToRoles || m.appliesToRoles.length === 0 ? (
+                    <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium text-sky-800">
+                      All roles
+                    </span>
+                  ) : (
+                    m.appliesToRoles.map((r) => (
+                      <span
+                        key={r}
+                        className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium text-sky-800"
+                      >
+                        {ROLE_SHORT[r] ?? r}
+                      </span>
+                    ))
+                  )}
                 </div>
                 <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap text-sm text-stone-600">{m.bodyEs}</p>
                 <div className="mt-2 rounded-lg bg-stone-50 p-2.5 text-xs text-stone-600">
@@ -259,6 +286,41 @@ export default function TrackEditor() {
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
                 </Select>
+              </div>
+              <div className="col-span-2">
+                <Label>
+                  Delivered to roles — leave all unchecked for “All roles (universal)”
+                </Label>
+                <div className="flex flex-wrap gap-3 rounded-lg border border-stone-200 p-2.5">
+                  {WORKER_ROLES.map((r) => {
+                    const checked = form.appliesToRoles.includes(r);
+                    return (
+                      <label key={r} className="flex items-center gap-1.5 text-sm text-stone-700">
+                        <input
+                          type="checkbox"
+                          className="rounded border-stone-300"
+                          checked={checked}
+                          onChange={(e) =>
+                            setForm({
+                              ...form,
+                              appliesToRoles: e.target.checked
+                                ? [...form.appliesToRoles, r]
+                                : form.appliesToRoles.filter((x) => x !== r),
+                            })
+                          }
+                        />
+                        {WORKER_ROLE_LABELS[r]}
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="mt-1 text-xs text-stone-400">
+                  {form.appliesToRoles.length === 0
+                    ? 'Universal — every enrolled worker receives this lesson.'
+                    : `Only workers with these roles receive it: ${form.appliesToRoles
+                        .map((r) => ROLE_SHORT[r] ?? r)
+                        .join(', ')}.`}
+                </p>
               </div>
             </div>
             <div>

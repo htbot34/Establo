@@ -21,6 +21,7 @@ import {
   sopChunks,
   sopDocuments,
   trainingEvents,
+  WORKER_ROLES,
   workers,
 } from '../db/schema.js';
 import { config } from '../config.js';
@@ -355,6 +356,7 @@ export function registerApiRoutes(app: FastifyInstance): void {
     phoneE164: z.string().refine(isValidE164, 'Phone must be E.164 format, e.g. +12085551234'),
     notes: z.string().max(2000).optional().nullable(),
     status: z.enum(['active', 'inactive']).optional(),
+    jobRole: z.enum(WORKER_ROLES).nullable().optional(),
   });
 
   app.post('/api/workers', async (req, reply) => {
@@ -377,6 +379,7 @@ export function registerApiRoutes(app: FastifyInstance): void {
         name: parsed.data.name,
         phoneE164: parsed.data.phoneE164,
         notes: parsed.data.notes ?? null,
+        jobRole: parsed.data.jobRole ?? null,
         hiredAt: new Date(),
       })
       .returning();
@@ -724,6 +727,8 @@ export function registerApiRoutes(app: FastifyInstance): void {
     dayOffset: z.number().int().min(0).max(60),
     sendHourLocal: z.number().int().min(5).max(20).default(7),
     farmTopic: z.enum(FARM_TOPICS).default('none'),
+    // Role targeting: empty/omitted = universal (applies to all roles).
+    appliesToRoles: z.array(z.enum(WORKER_ROLES)).nullable().optional(),
   });
 
   app.post<{ Params: { id: string } }>('/api/tracks/:id/modules', async (req, reply) => {

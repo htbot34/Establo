@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api, fmtDate, fmtDateTime, IS_DEMO, timeAgo } from '../api';
+import { roleApplies, WORKER_ROLES, WORKER_ROLE_LABELS } from '../../server/services/roles';
 import {
   Badge,
   Button,
@@ -68,6 +69,7 @@ interface WorkerDetailData {
   hiredAt: string | null;
   lastInboundAt: string | null;
   notes: string | null;
+  jobRole?: string | null;
   consentStatus?: string;
   consentedAt?: string | null;
   consentMethod?: string | null;
@@ -81,6 +83,10 @@ interface Track {
   id: string;
   name: string;
   moduleCount: number;
+}
+
+interface TrackModules {
+  modules: Array<{ appliesToRoles: string[] | null }>;
 }
 
 const EVENT_STYLE: Record<string, { label: string; color: string; icon: string }> = {
@@ -106,6 +112,7 @@ export default function WorkerDetail() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [enrolling, setEnrolling] = useState(false);
   const [trackId, setTrackId] = useState('');
+  const [trackPreview, setTrackPreview] = useState<{ applicable: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attesting, setAttesting] = useState<null | 'consent' | 'agreement'>(null);
   const [attestName, setAttestName] = useState('');
@@ -119,6 +126,26 @@ export default function WorkerDetail() {
     void api<Track[]>('/api/tracks').then(setTracks);
   }, [load]);
 
+  // Preview how many lessons this worker's role will actually receive from the
+  // selected track (universal + role-specific that apply).
+  useEffect(() => {
+    if (!trackId) {
+      setTrackPreview(null);
+      return;
+    }
+    let cancelled = false;
+    void api<TrackModules>(`/api/tracks/${trackId}`).then((t) => {
+      if (cancelled) return;
+      const applicable = t.modules.filter((m) =>
+        roleApplies(m.appliesToRoles, data?.jobRole ?? null),
+      ).length;
+      setTrackPreview({ applicable, total: t.modules.length });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [trackId, data?.jobRole]);
+
   if (!data) return <Spinner />;
 
   async function enroll() {
@@ -126,6 +153,16 @@ export default function WorkerDetail() {
     try {
       await api(`/api/workers/${id}/enroll`, { method: 'POST', body: { trackId } });
       setEnrolling(false);
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function setRole(jobRole: string) {
+    setError(null);
+    try {
+      await api(`/api/workers/${id}`, { method: 'PATCH', body: { jobRole: jobRole || null } });
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -211,6 +248,26 @@ export default function WorkerDetail() {
           {note}
         </div>
       )}
+
+      {/* ── Job role (drives role-scoped onboarding) ── */}
+      <Card className="mb-4 flex flex-wrap items-center gap-3 p-4">
+        <div>
+          <h2 className="text-sm font-semibold text-stone-700">Job role</h2>
+          <p className="text-xs text-stone-400">
+            Decides which role-specific lessons this worker receives when enrolled.
+          </p>
+        </div>
+        <div className="w-64">
+          <Select value={data.jobRole ?? ''} onChange={(e) => void setRole(e.target.value)}>
+            <option value="">Unassigned (universal lessons only)</option>
+            {WORKER_ROLES.map((r) => (
+              <option key={r} value={r}>
+                {WORKER_ROLE_LABELS[r]}
+              </option>
+            ))}
+          </Select>
+        </div>
+      </Card>
 
       {/* ── Compliance: consent + cow care agreement ── */}
       <Card className="mb-4 p-5">
@@ -400,6 +457,25 @@ export default function WorkerDetail() {
               </option>
             ))}
           </Select>
+          {trackId && trackPreview && (
+            <p className="mt-3 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-900">
+              This worker{' '}
+              {data.jobRole ? (
+                <>
+                  (role: <strong>{WORKER_ROLE_LABELS[data.jobRole as keyof typeof WORKER_ROLE_LABELS]}</strong>)
+                </>
+              ) : (
+                '(unassigned)'
+              )}{' '}
+              will receive{' '}
+              <strong>
+                {trackPreview.applicable} of {trackPreview.total}
+              </strong>{' '}
+              lessons based on their role.
+              {trackPreview.applicable === 0 &&
+                ' No lessons in this track apply to this role — assign a different role or pick another track.'}
+            </p>
+          )}
           <p className="mt-2 text-xs text-stone-400">
             Modules are scheduled from today using each module's day offset, and sent by the
             scheduler at the configured local hour.
@@ -408,7 +484,12 @@ export default function WorkerDetail() {
           </p>
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setEnrolling(false)}>Cancel</Button>
-            <Button disabled={!trackId} onClick={() => void enroll()}>Enroll</Button>
+            <Button
+              disabled={!trackId || trackPreview?.applicable === 0}
+              onClick={() => void enroll()}
+            >
+              Enroll
+            </Button>
           </div>
         </Modal>
       )}

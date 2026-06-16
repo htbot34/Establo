@@ -14,6 +14,7 @@ import {
 import { computeScheduledFor } from '../lib/time.js';
 import { generateCertificate } from './certificates.js';
 import { ES } from './messages.es.js';
+import { roleApplies } from './roles.js';
 import { sendToWorker } from './sendToWorker.js';
 import { synthesizeSpeech } from './speech.js';
 import { classifyTopicByKeywords } from './topics.js';
@@ -66,6 +67,12 @@ export async function enrollWorker(
 
   const trackModules = await db.select().from(modules).where(eq(modules.trackId, track.id));
   if (trackModules.length === 0) throw new Error('Track has no modules');
+  // Role scoping: deliver universal modules + only the role-specific modules
+  // that apply to this worker's role.
+  const applicable = trackModules.filter((m) => roleApplies(m.appliesToRoles, worker.jobRole));
+  if (applicable.length === 0) {
+    throw new Error("No modules in this track apply to this worker's role");
+  }
   const startedAt = args.startedAt ?? new Date();
 
   const [enr] = await db
@@ -74,7 +81,7 @@ export async function enrollWorker(
     .returning();
 
   await db.insert(moduleDeliveries).values(
-    trackModules.map((m) => ({
+    applicable.map((m) => ({
       enrollmentId: enr.id,
       moduleId: m.id,
       orgId: worker.orgId,

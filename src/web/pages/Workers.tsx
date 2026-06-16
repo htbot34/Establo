@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api, IS_DEMO, timeAgo } from '../api';
+import { WORKER_ROLES, WORKER_ROLE_LABELS } from '../../server/services/roles';
 import {
   Badge,
   Button,
@@ -25,6 +26,7 @@ export interface WorkerRow {
   status: string;
   lastInboundAt: string | null;
   notes: string | null;
+  jobRole?: string | null;
   consentStatus?: string;
   consentedAt?: string | null;
   consentMethod?: string | null;
@@ -67,6 +69,7 @@ export default function Workers() {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('+1208555');
+  const [jobRole, setJobRole] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -85,11 +88,12 @@ export default function Workers() {
     try {
       await api('/api/workers', {
         method: 'POST',
-        body: { name, phoneE164: phone.trim(), notes: notes || null },
+        body: { name, phoneE164: phone.trim(), jobRole: jobRole || null, notes: notes || null },
       });
       setAdding(false);
       setName('');
       setPhone('+1208555');
+      setJobRole('');
       setNotes('');
       await load();
     } catch (err) {
@@ -146,6 +150,7 @@ export default function Workers() {
               <tr className="border-b border-stone-200 text-left text-xs uppercase tracking-wide text-stone-400">
                 <th className="px-5 py-3 font-medium">Name</th>
                 <th className="px-3 py-3 font-medium">Phone</th>
+                <th className="px-3 py-3 font-medium">Role</th>
                 <th className="px-3 py-3 font-medium">Consent</th>
                 <th className="px-3 py-3 font-medium">Agreement</th>
                 <th className="px-3 py-3 font-medium">Onboarding</th>
@@ -162,6 +167,15 @@ export default function Workers() {
                     {w.status !== 'active' && <span className="ml-2">{statusBadge(w.status)}</span>}
                   </td>
                   <td className="px-3 py-3 font-mono text-xs text-stone-600">{w.phoneE164}</td>
+                  <td className="px-3 py-3 text-xs text-stone-600">
+                    {w.jobRole && WORKER_ROLE_LABELS[w.jobRole as keyof typeof WORKER_ROLE_LABELS] ? (
+                      <Badge color="blue">
+                        {WORKER_ROLE_LABELS[w.jobRole as keyof typeof WORKER_ROLE_LABELS]}
+                      </Badge>
+                    ) : (
+                      <span className="text-stone-400">unassigned</span>
+                    )}
+                  </td>
                   <td className="px-3 py-3">{consentBadge(w.consentStatus)}</td>
                   <td className="px-3 py-3">{agreementCell(w)}</td>
                   <td className="px-3 py-3 text-stone-600">
@@ -201,6 +215,17 @@ export default function Workers() {
             <div>
               <Label>WhatsApp phone (E.164)</Label>
               <Input value={phone} onChange={(e) => setPhone(e.target.value)} required placeholder="+12085551234" />
+            </div>
+            <div>
+              <Label>Job role (decides which role-specific lessons they receive)</Label>
+              <Select value={jobRole} onChange={(e) => setJobRole(e.target.value)}>
+                <option value="">Unassigned (universal lessons only)</option>
+                {WORKER_ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {WORKER_ROLE_LABELS[r]}
+                  </option>
+                ))}
+              </Select>
             </div>
             <div>
               <Label>Notes (optional)</Label>

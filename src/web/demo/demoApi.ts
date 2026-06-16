@@ -19,6 +19,7 @@ import {
 import { mapToFarmTopic } from '../../server/services/farmTopics';
 import { matchForbiddenTopic } from '../../server/services/guards';
 import { looksSpanish } from '../../server/services/language';
+import { roleApplies } from '../../server/services/roles';
 import { routeInbound } from '../../server/services/router';
 import { classifyTopicByKeywords } from '../../server/services/topics';
 import { windowState } from '../../server/services/window';
@@ -717,6 +718,7 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
       hiredAt: nowIso(),
       lastInboundAt: null,
       notes: body.notes ?? null,
+      jobRole: body.jobRole ?? null,
       consentStatus: 'pending', // adding a worker is NOT opt-in (Meta policy)
       consentedAt: null,
       consentMethod: null,
@@ -738,6 +740,14 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
       (e) => e.workerId === worker.id && e.trackId === track.id && e.status === 'active',
     );
     if (existing) return { enrollmentId: existing.id, created: false };
+    // Role scoping (mirror of enrollWorker): universal modules + only the
+    // role-specific modules that apply to this worker's role.
+    const applicable = s.modules.filter(
+      (m) => m.trackId === track.id && roleApplies(m.appliesToRoles, worker.jobRole ?? null),
+    );
+    if (applicable.length === 0) {
+      fail(400, "No modules in this track apply to this worker's role");
+    }
     const startedAt = new Date();
     const enr = {
       id: uuid(),
@@ -749,7 +759,7 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
       createdAt: nowIso(),
     };
     s.enrollments.push(enr);
-    for (const m of s.modules.filter((m) => m.trackId === track.id)) {
+    for (const m of applicable) {
       s.deliveries.push({
         id: uuid(),
         enrollmentId: enr.id,
