@@ -1,5 +1,5 @@
 /**
- * Every canned worker-facing string lives here. Simple Spanish, 5th–6th
+ * Every canned worker-facing string lives here. Simple Spanish, 3rd–5th
  * grade reading level, short sentences, warm tone.
  */
 export const ES = {

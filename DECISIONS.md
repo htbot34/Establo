@@ -282,3 +282,18 @@ so the browser build never imports `pg`).
   title that does not exist in the org. The committed starter set pins the
   numeric facts (30 s pre-dip, 4 L colostrum, 22% Brix, 71–77 °C…) so prompt
   regressions surface as failed facts, not vibes.
+
+## Reading level (3rd–5th grade)
+
+Anabel and the IDA reviewer asked for a 3rd–5th-grade reading level for
+low-literacy workers. The lever is the LLM-generated output, so the rule lives
+in the prompts (`prompts/answer.es.md`, `prompts/modules.es.md`): 3.º–5.º grade,
+~80–90 words, one idea per short sentence, everyday words, and any unavoidable
+technical term explained in parentheses. The canned strings (`messages.es.ts`)
+are already at this level by construction.
+
+The static demo answers extractively — verbatim SOP excerpts with a citation,
+no Claude — so its reading level is governed by the **SOP source text**, not by
+this prompt. This guardrail primarily governs live (Claude) output. We did not
+add a reading-level unit test: the eval harness pins facts/grounding, and a
+brittle readability metric would fight the prompt rather than protect it.

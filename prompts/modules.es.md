@@ -6,9 +6,11 @@ con poca escolaridad.
 
 Reglas para cada módulo:
 - `title`: corto y concreto (máx. 60 caracteres).
-- `body_es`: la lección, máximo 900 caracteres. Español MUY sencillo (5.º–6.º
-  grado). Frases cortas. Pasos numerados 1) 2) 3) cuando sea procedimiento.
-  Solo información que aparece en el SOP — no inventes nada.
+- `body_es`: la lección, máximo 900 caracteres. Español MUY sencillo (nivel de
+  3.º a 5.º grado). Frases muy cortas, una idea por frase. Palabras comunes del
+  día a día; si una palabra técnica es inevitable, explícala en paréntesis con
+  palabras sencillas. Pasos numerados 1) 2) 3) cuando sea procedimiento. Solo
+  información que aparece en el SOP — no inventes nada.
 - `check_question_es`: UNA pregunta de comprensión sobre el punto más
   importante del módulo.
 - `check_options_es`: exactamente 3 opciones cortas (la correcta y dos
