@@ -135,6 +135,10 @@ export interface DemoModule {
     | 'none';
   /** Role targeting: [] (empty) = universal (every role gets it). */
   appliesToRoles: WorkerRole[];
+  /** Optional video LINK (never hosted/clipped). Most modules have none. */
+  videoUrl?: string;
+  videoTitleEs?: string;
+  videoLangs?: string[];
 }
 
 export const DEMO_MODULES: DemoModule[] = [
@@ -212,6 +216,16 @@ export const DEMO_MODULES: DemoModule[] = [
     sopKey: 'manejo',
     farmTopic: 'stockmanship_general',
     appliesToRoles: [], // universal — low-stress handling is for everyone
+    // Capability demo only: a PUBLIC video link attached to one module to show
+    // the optional per-module video feature. Establo never hosts, uploads,
+    // downloads, or clips video — it only sends/embeds a link. Re-hosting or
+    // clipping someone else's video requires their written permission;
+    // embedding a public link is the supported pattern. This is a placeholder
+    // sample — a real farm replaces it with its own or a licensed/extension
+    // video on low-stress cattle handling.
+    videoUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+    videoTitleEs: 'Ejemplo: manejo de ganado de bajo estrés',
+    videoLangs: ['es', 'en'],
   },
   {
     dayOffset: 7,

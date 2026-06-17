@@ -21,6 +21,7 @@ import { matchForbiddenTopic } from '../../server/services/guards';
 import { looksSpanish } from '../../server/services/language';
 import { roleApplies } from '../../server/services/roles';
 import { routeInbound } from '../../server/services/router';
+import { parseVideoUrl } from '../../server/services/video';
 import { classifyTopicByKeywords } from '../../server/services/topics';
 import { windowState } from '../../server/services/window';
 import { computeScheduledFor } from '../../server/lib/time';
@@ -255,13 +256,13 @@ function deliverModule(delivery: Row): boolean {
   const module = s.modules.find((m) => m.id === delivery.moduleId)!;
   const enrollment = s.enrollments.find((e) => e.id === delivery.enrollmentId)!;
   const total = s.modules.filter((m) => m.trackId === module.trackId).length;
-  const text = [
-    ES.moduleHeader(module.orderIndex + 1, total, module.title),
-    '',
-    module.bodyEs,
-    '',
-    ES.checkPrompt(module.checkQuestionEs, module.checkOptionsEs),
-  ].join('\n');
+  const lines = [ES.moduleHeader(module.orderIndex + 1, total, module.title), '', module.bodyEs];
+  // Optional video: append the same link line the real drip sends.
+  if (module.videoUrl) {
+    lines.push('', ES.videoLine(module.videoTitleEs || module.title, module.videoUrl));
+  }
+  lines.push('', ES.checkPrompt(module.checkQuestionEs, module.checkOptionsEs));
+  const text = lines.join('\n');
   pushMessage(enrollment.workerId, { direction: 'outbound', type: 'text', bodyText: text });
   pushMessage(enrollment.workerId, { direction: 'outbound', type: 'voice', audioReplyUrl: moduleAudioUrl(module.id) });
   delivery.status = 'sent';
@@ -936,7 +937,17 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
   if (seg[1] === 'tracks' && seg[2] && seg[3] === 'modules' && method === 'POST') {
     const track = s.tracks.find((t) => t.id === seg[2]) ?? fail(404, 'Track not found');
     const max = Math.max(-1, ...s.modules.filter((m) => m.trackId === track.id).map((m) => m.orderIndex));
-    const row = { id: uuid(), trackId: track.id, orgId: s.org.id, orderIndex: max + 1, sourceDocumentId: null, ...body };
+    const video = body.videoUrl ? parseVideoUrl(body.videoUrl) : null;
+    const row = {
+      id: uuid(),
+      trackId: track.id,
+      orgId: s.org.id,
+      orderIndex: max + 1,
+      sourceDocumentId: null,
+      ...body,
+      videoUrl: video?.url ?? null,
+      videoProvider: video?.provider ?? null,
+    };
     s.modules.push(row);
     return row;
   }
@@ -963,6 +974,11 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
       return { ok: true };
     }
     Object.assign(module, body);
+    if ('videoUrl' in body) {
+      const video = body.videoUrl ? parseVideoUrl(body.videoUrl) : null;
+      module.videoUrl = video?.url ?? null;
+      module.videoProvider = video?.provider ?? null;
+    }
     return module;
   }
 

@@ -489,3 +489,42 @@ describe('role-scoped onboarding', () => {
     await expect(enrollWorker(db, { workerId: feeder.id, trackId: track.id })).rejects.toThrow(/role/);
   });
 });
+
+describe('optional per-module video', () => {
+  it('delivers a module with a video as a link line (never an upload)', async () => {
+    const [track] = await db
+      .insert(onboardingTracks)
+      .values({ orgId: orgA.id, name: 'Track con video' })
+      .returning();
+    await db.insert(modules).values({
+      trackId: track.id, orgId: orgA.id, orderIndex: 0, dayOffset: 0, sendHourLocal: 7,
+      title: 'Lección con video', bodyEs: 'Mira el video y luego responde.',
+      checkQuestionEs: '¿Listo?', checkOptionsEs: ['Sí', 'No', 'Tal vez'], checkCorrectIndex: 0,
+      videoUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+      videoTitleEs: 'Manejo de ganado', videoProvider: 'youtube', videoLangs: ['es'],
+    });
+    const [w] = await db
+      .insert(workers)
+      .values({
+        orgId: orgA.id, name: 'Video Worker', phoneE164: '+15005550020',
+        lastInboundAt: new Date(), consentStatus: 'opted_in',
+      })
+      .returning();
+    await enrollWorker(db, { workerId: w.id, trackId: track.id });
+    const tick = await runDripTick(db); // window open → delivered immediately
+    expect(tick.delivered).toBeGreaterThanOrEqual(1);
+
+    const recent = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.orgId, orgA.id))
+      .orderBy(desc(messages.createdAt))
+      .limit(6);
+    const lesson = recent.find((m) => m.bodyText?.includes('Lección con video'));
+    expect(lesson?.bodyText).toContain(
+      '📹 Mira el video (Manejo de ganado): https://www.youtube.com/watch?v=jNQXAC9IVRw',
+    );
+    // It is a link in the text, not a media upload.
+    expect(lesson?.mediaUrl ?? null).toBeNull();
+  });
+});

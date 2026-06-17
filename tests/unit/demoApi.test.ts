@@ -184,6 +184,37 @@ describe('static demo in-browser API', () => {
     expect(anaTitles.length).toBe(3);
   });
 
+  it('a module with a video link emits the video line on delivery', async () => {
+    const track = await demoFetch('/api/tracks', { method: 'POST', body: { name: 'Con video' } });
+    await demoFetch(`/api/tracks/${track.id}/modules`, {
+      method: 'POST',
+      body: {
+        title: 'Lección con video',
+        bodyEs: 'Cuerpo de la lección.',
+        checkQuestionEs: '¿Listo?',
+        checkOptionsEs: ['Sí', 'No', 'Tal vez'],
+        checkCorrectIndex: 0,
+        dayOffset: 0,
+        videoUrl: 'https://youtu.be/dQw4w9WgXcQ',
+        videoTitleEs: 'Mi video',
+      },
+    });
+    const luz = await workerByName('Luz');
+    await demoFetch(`/api/workers/${luz.id}/enroll`, { method: 'POST', body: { trackId: track.id } });
+    // Deterministic handshake (independent of the fixture's wall-clock age).
+    await demoFetch('/api/simulator/close-window', { method: 'POST', body: { workerId: luz.id } });
+    await demoFetch('/api/simulator/run-drip', { method: 'POST' });
+    await demoFetch('/api/simulator/inbound', {
+      method: 'POST',
+      body: { workerId: luz.id, kind: 'text', text: 'OK' },
+    });
+    const msgs = await lastMessages(luz.id, 6);
+    // The lesson carries the 📚 header (the template notification never does).
+    const lesson = msgs.find((m) => m.bodyText?.includes('📚 Lección'));
+    expect(lesson?.bodyText).toContain('Lección con video');
+    expect(lesson?.bodyText).toContain('📹 Mira el video (Mi video): https://youtu.be/dQw4w9WgXcQ');
+  });
+
   it('refuses to enroll when no lesson in the track applies to the worker’s role', async () => {
     // A track with a single ordeño-only lesson (no universal modules) leaves a
     // calf-care worker with zero applicable lessons.

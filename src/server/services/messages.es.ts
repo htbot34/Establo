@@ -40,6 +40,9 @@ export const ES = {
   moduleHeader: (index: number, total: number, title: string) =>
     `📚 Lección ${index} de ${total}: *${title}*`,
 
+  /** Optional video line appended to a lesson (the link unfurls in WhatsApp). */
+  videoLine: (title: string, url: string) => `📹 Mira el video (${title}): ${url}`,
+
   checkReminderFreeform: (title: string) =>
     `Hola 👋 Te falta responder la pregunta de tu lección "${title}". ` +
     'Mira el mensaje de arriba y responde con 1, 2 o 3.',

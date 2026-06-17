@@ -42,6 +42,7 @@ import { optInWorker } from '../services/consent.js';
 import { enrollWorker, runDripTick } from '../services/drip.js';
 import { isImageMime } from '../services/ingestion.js';
 import { anthropicAvailable, extractJson, generateText } from '../services/llm.js';
+import { isValidVideoUrl, parseVideoUrl } from '../services/video.js';
 import { resumeTemplateSends } from '../services/templateHealth.js';
 import { generateWorkerTranscriptPdf } from '../services/transcripts.js';
 
@@ -729,6 +730,19 @@ export function registerApiRoutes(app: FastifyInstance): void {
     farmTopic: z.enum(FARM_TOPICS).default('none'),
     // Role targeting: empty/omitted = universal (applies to all roles).
     appliesToRoles: z.array(z.enum(WORKER_ROLES)).nullable().optional(),
+    // Optional video link (provider is derived server-side, never trusted from
+    // the client). '' clears it. We validate but never host/clip the video.
+    videoUrl: z
+      .string()
+      .max(500)
+      .refine(
+        (v) => v === '' || isValidVideoUrl(v),
+        'Enter a valid https video link (YouTube, Vimeo, or a direct https URL)',
+      )
+      .nullable()
+      .optional(),
+    videoTitleEs: z.string().max(160).nullable().optional(),
+    videoLangs: z.array(z.string().min(2).max(5)).max(8).nullable().optional(),
   });
 
   app.post<{ Params: { id: string } }>('/api/tracks/:id/modules', async (req, reply) => {
@@ -747,6 +761,7 @@ export function registerApiRoutes(app: FastifyInstance): void {
       .select({ max: sql<number>`COALESCE(MAX(${modules.orderIndex}), -1)` })
       .from(modules)
       .where(eq(modules.trackId, track.id));
+    const video = parsed.data.videoUrl ? parseVideoUrl(parsed.data.videoUrl) : null;
     const [row] = await db
       .insert(modules)
       .values({
@@ -754,6 +769,8 @@ export function registerApiRoutes(app: FastifyInstance): void {
         orgId,
         orderIndex: Number(maxRow.max) + 1,
         ...parsed.data,
+        videoUrl: video?.url ?? null,
+        videoProvider: video?.provider ?? null,
       })
       .returning();
     return row;
@@ -764,10 +781,18 @@ export function registerApiRoutes(app: FastifyInstance): void {
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid module' });
     }
+    // Re-derive provider only when videoUrl is part of this patch ('' clears it).
+    const videoPatch =
+      'videoUrl' in parsed.data
+        ? (() => {
+            const v = parsed.data.videoUrl ? parseVideoUrl(parsed.data.videoUrl) : null;
+            return { videoUrl: v?.url ?? null, videoProvider: v?.provider ?? null };
+          })()
+        : {};
     const db = getDb();
     const [row] = await db
       .update(modules)
-      .set({ ...parsed.data, updatedAt: new Date() })
+      .set({ ...parsed.data, ...videoPatch, updatedAt: new Date() })
       .where(and(eq(modules.id, req.params.id), eq(modules.orgId, req.authOrg!.id)))
       .returning();
     if (!row) return reply.code(404).send({ error: 'Module not found' });

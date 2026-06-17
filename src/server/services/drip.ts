@@ -25,13 +25,15 @@ function firstName(fullName: string): string {
   return fullName.split(/\s+/)[0] ?? fullName;
 }
 
-/** Strip the citation line + emoji for text-to-speech (reads awkwardly aloud). */
+/** Strip the citation line + emoji for text-to-speech (reads awkwardly aloud).
+ *  The video line keeps a spoken mention but drops the URL (unspeakable). */
 export function ttsVariant(text: string): string {
   return text
     .split('\n')
     .filter((l) => !l.includes('📄 Fuente:'))
+    .map((l) => (l.includes('📹') ? 'Te mandé también un video sobre esto. Míralo en el mensaje.' : l))
     .join('\n')
-    .replace(/[📚📄✅🎉👋🙏💪😅😊🐄📷]/gu, '')
+    .replace(/[📚📄📹✅🎉👋🙏💪😅😊🐄📷]/gu, '')
     .trim();
 }
 
@@ -93,13 +95,18 @@ export async function enrollWorker(
 }
 
 function composeModuleMessage(module: Module, orderIndex: number, total: number): string {
-  return [
+  const lines = [
     ES.moduleHeader(orderIndex + 1, total, module.title),
     '',
     module.bodyEs,
-    '',
-    ES.checkPrompt(module.checkQuestionEs, module.checkOptionsEs),
-  ].join('\n');
+  ];
+  // Optional video: append a link line (it unfurls in WhatsApp). We never
+  // upload/host video — just send the link the manager attached.
+  if (module.videoUrl) {
+    lines.push('', ES.videoLine(module.videoTitleEs || module.title, module.videoUrl));
+  }
+  lines.push('', ES.checkPrompt(module.checkQuestionEs, module.checkOptionsEs));
+  return lines.join('\n');
 }
 
 /**

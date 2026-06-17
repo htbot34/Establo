@@ -29,6 +29,7 @@ import { ingestDocument } from '../services/ingestion.js';
 import { usingStubEmbeddings } from '../services/embeddings.js';
 import { ES } from '../services/messages.es.js';
 import { synthesizeSpeech } from '../services/speech.js';
+import { parseVideoUrl } from '../services/video.js';
 import {
   DEMO_MODULES,
   DEMO_ORG,
@@ -209,6 +210,10 @@ export async function seed(): Promise<void> {
         sendHourLocal: m.sendHourLocal,
         farmTopic: m.farmTopic,
         appliesToRoles: m.appliesToRoles,
+        videoUrl: m.videoUrl ?? null,
+        videoTitleEs: m.videoTitleEs ?? null,
+        videoProvider: m.videoUrl ? (parseVideoUrl(m.videoUrl)?.provider ?? null) : null,
+        videoLangs: m.videoLangs ?? null,
         title: m.title,
         bodyEs: m.bodyEs,
         checkQuestionEs: m.checkQuestionEs,

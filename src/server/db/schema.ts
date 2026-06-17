@@ -190,6 +190,12 @@ export const modules = pgTable(
     // Role targeting: which job roles receive this module. null/empty = applies
     // to ALL roles (universal). See services/roles.ts → roleApplies().
     appliesToRoles: jsonb('applies_to_roles').$type<string[]>(),
+    // Optional per-module video (a LINK we send/embed — never hosted or clipped).
+    // provider is informational (youtube|vimeo|url); see services/video.ts.
+    videoUrl: text('video_url'),
+    videoTitleEs: text('video_title_es'),
+    videoProvider: text('video_provider'),
+    videoLangs: jsonb('video_langs').$type<string[]>(),
     title: text('title').notNull(),
     bodyEs: text('body_es').notNull(),
     checkQuestionEs: text('check_question_es').notNull(),

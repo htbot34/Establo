@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, IS_DEMO, timeAgo } from '../api';
 import { Button, Card, consentBadge, PageHeader, Select, Spinner } from '../components';
 import { looksSpanish } from '../../server/services/language';
+import { videoFromText } from '../../server/services/video';
 
 /** Spanish starter questions drawn from the seeded SOPs (tap to fill the box). */
 const SUGGESTED_QUESTIONS = [
@@ -218,6 +219,22 @@ export default function Simulator() {
                         <div className="mb-0.5 text-[10px] text-stone-500">📋 plantilla (fuera de ventana 24h)</div>
                       )}
                       <p className="whitespace-pre-wrap">{m.bodyText ?? m.transcriptText ?? ''}</p>
+                      {m.direction === 'outbound' &&
+                        m.bodyText &&
+                        (() => {
+                          const v = videoFromText(m.bodyText);
+                          return v?.embedUrl ? (
+                            <div className="mt-1.5 aspect-video w-52 overflow-hidden rounded-lg border border-stone-200">
+                              <iframe
+                                src={v.embedUrl}
+                                title="video de la lección"
+                                className="h-full w-full"
+                                allow="encrypted-media; picture-in-picture"
+                                allowFullScreen
+                              />
+                            </div>
+                          ) : null;
+                        })()}
                       {m.audioReplyUrl &&
                         (IS_DEMO && !m.audioReplyUrl.startsWith('./demo-audio/') ? (
                           <div className="mt-1 w-fit rounded-full bg-stone-100 px-2.5 py-1 text-[10px] text-stone-500">
