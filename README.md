@@ -65,7 +65,7 @@ answers; that is the expected dev setup. Useful commands:
 ```bash
 pnpm ask "¿cuánto tiempo dejo el pre-dip?"   # retrieval+answer smoke test (CLI)
 pnpm eval                                     # run the eval set, print scorecard
-pnpm test                                     # 97 unit + integration tests
+pnpm test                                     # 121 unit + integration tests
 pnpm sample-image                             # regenerate samples/sop-photo-sample.png
 ```
 
@@ -197,6 +197,20 @@ Worker WhatsApp ──▶ Twilio ──▶ POST /webhooks/twilio ──▶ webho
   (default `America/Boise`). Window open → full lesson + TTS audio; closed →
   notify template, full lesson on the worker's reply. One gentle reminder
   after 24h unanswered (max 1). Completion → Spanish certificate PDF.
+- **Role-scoped onboarding:** a worker has a job role (`job_role`); a module
+  optionally targets roles (`applies_to_roles`). Enrollment delivers the
+  universal modules (empty target) **plus** only the role-specific modules that
+  apply — milkers get milking lessons, calf-care workers get calf lessons —
+  without duplicating universal lessons across tracks. The enroll dialog shows
+  "N of M lessons by role"; the logic is the pure `services/roles.ts`
+  (`roleApplies`), shared by server and the static demo.
+- **Optional per-module video:** a module can carry a video **link**
+  (`video_url`). Establo never hosts, uploads, downloads, or clips video — it
+  sends the link (it unfurls in WhatsApp) and embeds a privacy-enhanced
+  `youtube-nocookie` (or Vimeo) preview in the editor and chat views.
+  `services/video.ts` normalizes/validates the URL and derives the provider
+  server-side. Re-hosting/clipping someone else's video needs their written
+  permission; embedding a public link is the supported pattern.
 - **Audit pack:** letter PDF positioned for **FARM Animal Care v5**
   continuing-education expectations — per-employee records grouped by the five
   FARM areas (general stockmanship, pre-weaned calf care, non-ambulatory,
@@ -225,6 +239,37 @@ Claude is the grader (LLM-as-judge, `prompts/eval-grade.md`); without keys it
 falls back to the committed 29-case starter set and a heuristic grader so the
 harness always runs — those numbers exercise plumbing, not quality.
 
+## Refreshing the static demo
+
+The GitHub Pages demo is backed by `src/web/demo/fixture.json`, exported from a
+seeded Postgres. After any schema or seed change, regenerate it (no API keys
+needed — the fixture carries no embedding vectors):
+
+```bash
+docker compose up -d db
+pnpm migrate && pnpm seed          # stub embeddings, no keys required
+pnpm export-demo-fixture           # writes src/web/demo/fixture.json
+pnpm build:demo                    # confirm the static build still renders
+```
+
+`export-demo-fixture` selects full `workers`/`modules` rows, so new columns
+(e.g. `job_role`, `applies_to_roles`, the `video_*` fields) flow into the
+fixture automatically.
+
+**Optional real demo audio:** a static page has no API key, so by default the
+demo serves a labeled silent placeholder. With an `OPENAI_API_KEY` present at
+build time you can pre-render real Spanish lesson audio:
+
+```bash
+OPENAI_API_KEY=sk-... pnpm render-demo-audio   # after pnpm seed
+```
+
+This synthesizes OGG/Opus for each seeded lesson into
+`src/web/public/demo-audio/` and writes `src/web/demo/audioManifest.json`
+(stable `module:<id>` → path). `demoApi.ts` plays the real file when a manifest
+entry exists and falls back to the placeholder otherwise — with no key the
+manifest stays empty and behavior is identical to today.
+
 ## Security & guardrails
 
 - Org-scoped queries everywhere + cross-tenant tests; org-scoped file serving.
@@ -235,6 +280,17 @@ harness always runs — those numbers exercise plumbing, not quality.
 - Worker phones are PII → masked in logs (`+1••••••0101`).
 - Hard guard (pre-LLM) + prompt rules: never salary/employment, legal,
   immigration, or veterinary dosing advice → warm Spanish refusal + escalation.
+  Pay-stem coverage is enumerated by conjugation (`pagan`/`paga`/`pagar`/
+  `págame`…) so bare salary questions escalate, without false-matching `página`.
+- **Spanish-only nudge:** a cheap, deterministic language check
+  (`services/language.ts`, no LLM) on the free-form Q&A path replies with a warm
+  "por ahora solo contesto en español" when the worker writes in another
+  language, instead of a misleading "not found". It only triggers on clear,
+  multi-word non-Spanish — short/ambiguous input is treated as Spanish so real
+  workers are never nagged. Logged as a normal interaction, never an escalation.
+- **Reading level:** the grounding prompts target a **3rd–5th-grade** reading
+  level (~80–90 words, one idea per short sentence, everyday words, unavoidable
+  technical terms explained in parentheses) for low-literacy workers.
 - Worker consent gate in `sendToWorker`: business-initiated messages require
   `opted_in`; BAJA blocks everything until the worker texts ALTA (see
   **POLICY-SCOPE.md** for the purpose-restriction posture).
@@ -249,7 +305,7 @@ drizzle/            SQL migrations (pnpm migrate)
 prompts/            versioned LLM prompts (answer.es.md is the grounding contract)
 src/server/         Fastify app: routes/, services/, jobs/, db/, seed/
 src/web/            React dashboard (Vite, Tailwind, served at /app)
-scripts/            ask, generate-eval, run-eval, make-sample-sop-image
+scripts/            ask, generate-eval, run-eval, export-demo-fixture, render-demo-audio, make-sample-sop-image
 evals/              eval sets (starter committed) + results
 tests/              unit + integration (vitest; pnpm test)
 samples/            sop-photo-sample.png for the OCR path
