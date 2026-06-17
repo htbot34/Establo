@@ -122,37 +122,119 @@ describe('static demo in-browser API', () => {
   });
 
   it('runs the full drip handshake: enroll → closed window → template → OK → lesson → graded check', async () => {
-    const ana = await workerByName('Ana');
+    // Luz is an ordeño worker, so she receives the day-0 milking lesson.
+    const luz = await workerByName('Luz');
     const tracks = await demoFetch('/api/tracks');
-    await demoFetch(`/api/workers/${ana.id}/enroll`, {
+    await demoFetch(`/api/workers/${luz.id}/enroll`, {
       method: 'POST',
       body: { trackId: tracks[0].id },
     });
-    await demoFetch('/api/simulator/close-window', { method: 'POST', body: { workerId: ana.id } });
+    await demoFetch('/api/simulator/close-window', { method: 'POST', body: { workerId: luz.id } });
 
     const tick = await demoFetch('/api/simulator/run-drip', { method: 'POST' });
     expect(tick.notified).toBeGreaterThanOrEqual(1);
-    let msgs = await lastMessages(ana.id, 1);
+    let msgs = await lastMessages(luz.id, 1);
     expect(msgs[0].type).toBe('template');
     expect(msgs[0].bodyText).toContain('Responde OK');
 
     await demoFetch('/api/simulator/inbound', {
       method: 'POST',
-      body: { workerId: ana.id, kind: 'text', text: 'OK' },
+      body: { workerId: luz.id, kind: 'text', text: 'OK' },
     });
-    msgs = await lastMessages(ana.id, 3);
+    msgs = await lastMessages(luz.id, 3);
     expect(msgs.some((m) => m.bodyText?.includes('Lección 1 de 6'))).toBe(true);
 
     await demoFetch('/api/simulator/inbound', {
       method: 'POST',
-      body: { workerId: ana.id, kind: 'text', text: '2' },
+      body: { workerId: luz.id, kind: 'text', text: '2' },
     });
-    msgs = await lastMessages(ana.id, 1);
+    msgs = await lastMessages(luz.id, 1);
     expect(msgs[0].bodyText).toContain('¡Correcto!');
 
-    const detail = await demoFetch(`/api/workers/${ana.id}`);
+    const detail = await demoFetch(`/api/workers/${luz.id}`);
     const enr = detail.enrollments[0];
     expect(enr.deliveries.filter((d: { status: string }) => d.status === 'answered')).toHaveLength(1);
+  });
+
+  it('role-scopes enrollment: an ordeño worker and a calf-care worker get different lessons', async () => {
+    const tracks = await demoFetch('/api/tracks');
+    const luz = await workerByName('Luz'); // ordeño
+    const ana = await workerByName('Ana'); // becerras
+    await demoFetch(`/api/workers/${luz.id}/enroll`, { method: 'POST', body: { trackId: tracks[0].id } });
+    await demoFetch(`/api/workers/${ana.id}/enroll`, { method: 'POST', body: { trackId: tracks[0].id } });
+
+    const titlesFor = async (id: string): Promise<string[]> => {
+      const detail = await demoFetch(`/api/workers/${id}`);
+      return detail.enrollments[0].deliveries.map((d: { moduleTitle: string }) => d.moduleTitle);
+    };
+    const luzTitles = await titlesFor(luz.id);
+    const anaTitles = await titlesFor(ana.id);
+
+    // ordeño worker: milking lessons, not the calf-care one.
+    expect(luzTitles.some((t) => t.includes('rutina de ordeño'))).toBe(true);
+    expect(luzTitles.some((t) => t.includes('Calostro'))).toBe(false);
+    // calf-care worker: calostro, not the milking lessons.
+    expect(anaTitles.some((t) => t.includes('Calostro'))).toBe(true);
+    expect(anaTitles.some((t) => t.includes('rutina de ordeño'))).toBe(false);
+    // both get the universal chemical-safety lesson.
+    expect(luzTitles.some((t) => t.includes('Químicos'))).toBe(true);
+    expect(anaTitles.some((t) => t.includes('Químicos'))).toBe(true);
+    // and the delivery counts differ.
+    expect(luzTitles.length).toBe(5);
+    expect(anaTitles.length).toBe(3);
+  });
+
+  it('a module with a video link emits the video line on delivery', async () => {
+    const track = await demoFetch('/api/tracks', { method: 'POST', body: { name: 'Con video' } });
+    await demoFetch(`/api/tracks/${track.id}/modules`, {
+      method: 'POST',
+      body: {
+        title: 'Lección con video',
+        bodyEs: 'Cuerpo de la lección.',
+        checkQuestionEs: '¿Listo?',
+        checkOptionsEs: ['Sí', 'No', 'Tal vez'],
+        checkCorrectIndex: 0,
+        dayOffset: 0,
+        videoUrl: 'https://youtu.be/dQw4w9WgXcQ',
+        videoTitleEs: 'Mi video',
+      },
+    });
+    const luz = await workerByName('Luz');
+    await demoFetch(`/api/workers/${luz.id}/enroll`, { method: 'POST', body: { trackId: track.id } });
+    // Deterministic handshake (independent of the fixture's wall-clock age).
+    await demoFetch('/api/simulator/close-window', { method: 'POST', body: { workerId: luz.id } });
+    await demoFetch('/api/simulator/run-drip', { method: 'POST' });
+    await demoFetch('/api/simulator/inbound', {
+      method: 'POST',
+      body: { workerId: luz.id, kind: 'text', text: 'OK' },
+    });
+    const msgs = await lastMessages(luz.id, 6);
+    // The lesson carries the 📚 header (the template notification never does).
+    const lesson = msgs.find((m) => m.bodyText?.includes('📚 Lección'));
+    expect(lesson?.bodyText).toContain('Lección con video');
+    expect(lesson?.bodyText).toContain('📹 Mira el video (Mi video): https://youtu.be/dQw4w9WgXcQ');
+  });
+
+  it('refuses to enroll when no lesson in the track applies to the worker’s role', async () => {
+    // A track with a single ordeño-only lesson (no universal modules) leaves a
+    // calf-care worker with zero applicable lessons.
+    const track = await demoFetch('/api/tracks', { method: 'POST', body: { name: 'Solo ordeño' } });
+    await demoFetch(`/api/tracks/${track.id}/modules`, {
+      method: 'POST',
+      body: {
+        title: 'Lección de ordeño',
+        bodyEs: 'Pasos de ordeño.',
+        checkQuestionEs: '¿Listo?',
+        checkOptionsEs: ['Sí', 'No', 'Tal vez'],
+        checkCorrectIndex: 0,
+        dayOffset: 0,
+        appliesToRoles: ['ordeno'],
+      },
+    });
+    const ana = await workerByName('Ana'); // becerras
+    await expect(
+      demoFetch(`/api/workers/${ana.id}/enroll`, { method: 'POST', body: { trackId: track.id } }),
+    ).rejects.toThrowError(/role/);
   });
 
   it('keeps server-only features clearly unavailable', async () => {
@@ -217,6 +299,15 @@ describe('reviewer demo script — retrieval and routing', () => {
     const reply = await ask('hola');
     expect(reply.bodyText).toContain('Soy Establo');
     expect(reply.bodyText).not.toContain('📄 Fuente');
+  });
+
+  it('English question → Spanish-only nudge, no citation and no escalation', async () => {
+    const before = (await demoFetch('/api/escalations')).length;
+    const reply = await ask('how long do I leave the pre-dip on the teat?');
+    expect(reply.bodyText).toContain('solo contesto en español');
+    expect(reply.bodyText).not.toContain('📄 Fuente');
+    const after = await demoFetch('/api/escalations');
+    expect(after.length).toBe(before); // a normal interaction, never a knowledge gap
   });
 
   it('colostrum question → the 4-litros / 22% Brix chunk', async () => {

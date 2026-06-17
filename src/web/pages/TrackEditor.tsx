@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
+import { WORKER_ROLES, WORKER_ROLE_LABELS } from '../../server/services/roles';
+import { parseVideoUrl } from '../../server/services/video';
 import {
   Button,
   Card,
@@ -20,12 +22,27 @@ interface ModuleRow {
   dayOffset: number;
   sendHourLocal: number;
   farmTopic?: string;
+  appliesToRoles?: string[] | null;
+  videoUrl?: string | null;
+  videoTitleEs?: string | null;
+  videoLangs?: string[] | null;
   title: string;
   bodyEs: string;
   checkQuestionEs: string;
   checkOptionsEs: string[];
   checkCorrectIndex: number;
 }
+
+const VIDEO_LANGS = ['es', 'en'] as const;
+
+/** Short Spanish role labels for the per-module chips. */
+const ROLE_SHORT: Record<string, string> = {
+  ordeno: 'Ordeño',
+  becerras: 'Becerras',
+  alimentacion: 'Alimentación',
+  salud_hato: 'Salud del hato',
+  general: 'General',
+};
 
 /** FARM Animal Care v5 continuing-education areas (audit pack groups by these). */
 const FARM_TOPIC_OPTIONS = [
@@ -70,6 +87,10 @@ const EMPTY_MODULE = {
   dayOffset: 0,
   sendHourLocal: 7,
   farmTopic: 'none',
+  appliesToRoles: [] as string[],
+  videoUrl: '',
+  videoTitleEs: '',
+  videoLangs: [] as string[],
 };
 
 export default function TrackEditor() {
@@ -108,6 +129,10 @@ export default function TrackEditor() {
             dayOffset: mod.dayOffset,
             sendHourLocal: mod.sendHourLocal,
             farmTopic: mod.farmTopic ?? 'none',
+            appliesToRoles: [...(mod.appliesToRoles ?? [])],
+            videoUrl: mod.videoUrl ?? '',
+            videoTitleEs: mod.videoTitleEs ?? '',
+            videoLangs: [...(mod.videoLangs ?? [])],
           },
     );
   }
@@ -195,6 +220,25 @@ export default function TrackEditor() {
                       {FARM_TOPIC_SHORT[m.farmTopic] ?? m.farmTopic}
                     </span>
                   )}
+                  {!m.appliesToRoles || m.appliesToRoles.length === 0 ? (
+                    <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium text-sky-800">
+                      All roles
+                    </span>
+                  ) : (
+                    m.appliesToRoles.map((r) => (
+                      <span
+                        key={r}
+                        className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium text-sky-800"
+                      >
+                        {ROLE_SHORT[r] ?? r}
+                      </span>
+                    ))
+                  )}
+                  {m.videoUrl && (
+                    <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-medium text-rose-800">
+                      📹 video
+                    </span>
+                  )}
                 </div>
                 <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap text-sm text-stone-600">{m.bodyEs}</p>
                 <div className="mt-2 rounded-lg bg-stone-50 p-2.5 text-xs text-stone-600">
@@ -260,6 +304,104 @@ export default function TrackEditor() {
                   ))}
                 </Select>
               </div>
+              <div className="col-span-2">
+                <Label>
+                  Delivered to roles — leave all unchecked for “All roles (universal)”
+                </Label>
+                <div className="flex flex-wrap gap-3 rounded-lg border border-stone-200 p-2.5">
+                  {WORKER_ROLES.map((r) => {
+                    const checked = form.appliesToRoles.includes(r);
+                    return (
+                      <label key={r} className="flex items-center gap-1.5 text-sm text-stone-700">
+                        <input
+                          type="checkbox"
+                          className="rounded border-stone-300"
+                          checked={checked}
+                          onChange={(e) =>
+                            setForm({
+                              ...form,
+                              appliesToRoles: e.target.checked
+                                ? [...form.appliesToRoles, r]
+                                : form.appliesToRoles.filter((x) => x !== r),
+                            })
+                          }
+                        />
+                        {WORKER_ROLE_LABELS[r]}
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="mt-1 text-xs text-stone-400">
+                  {form.appliesToRoles.length === 0
+                    ? 'Universal — every enrolled worker receives this lesson.'
+                    : `Only workers with these roles receive it: ${form.appliesToRoles
+                        .map((r) => ROLE_SHORT[r] ?? r)
+                        .join(', ')}.`}
+                </p>
+              </div>
+            </div>
+            <div className="rounded-lg border border-stone-200 p-3">
+              <Label>Optional video — a link we send &amp; embed (never uploaded, hosted, or clipped)</Label>
+              <Input
+                placeholder="https://www.youtube.com/watch?v=…  (YouTube, Vimeo, or any https link)"
+                value={form.videoUrl}
+                onChange={(e) => setForm({ ...form, videoUrl: e.target.value })}
+              />
+              {form.videoUrl && !parseVideoUrl(form.videoUrl) && (
+                <p className="mt-1 text-xs text-red-600">Not a valid https video link.</p>
+              )}
+              {form.videoUrl && parseVideoUrl(form.videoUrl) && (
+                <>
+                  <div className="mt-2 grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Video title (Spanish, shown to the worker)</Label>
+                      <Input
+                        value={form.videoTitleEs}
+                        placeholder={form.title || 'Título del video'}
+                        onChange={(e) => setForm({ ...form, videoTitleEs: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label>Available languages</Label>
+                      <div className="flex gap-3 pt-2">
+                        {VIDEO_LANGS.map((lang) => (
+                          <label key={lang} className="flex items-center gap-1.5 text-sm text-stone-700">
+                            <input
+                              type="checkbox"
+                              className="rounded border-stone-300"
+                              checked={form.videoLangs.includes(lang)}
+                              onChange={(e) =>
+                                setForm({
+                                  ...form,
+                                  videoLangs: e.target.checked
+                                    ? [...form.videoLangs, lang]
+                                    : form.videoLangs.filter((x) => x !== lang),
+                                })
+                              }
+                            />
+                            {lang.toUpperCase()}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  {parseVideoUrl(form.videoUrl)?.embedUrl ? (
+                    <div className="mt-2 aspect-video w-full max-w-md overflow-hidden rounded-lg border border-stone-200">
+                      <iframe
+                        src={parseVideoUrl(form.videoUrl)!.embedUrl!}
+                        title="Video preview"
+                        className="h-full w-full"
+                        allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                      />
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-stone-500">
+                      Link will be sent to the worker (no inline preview for this provider).
+                    </p>
+                  )}
+                </>
+              )}
             </div>
             <div>
               <Label>Lesson body (Spanish, ≤900 chars, written for low literacy) — {form.bodyEs.length}/900</Label>

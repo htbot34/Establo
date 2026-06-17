@@ -18,11 +18,15 @@ import {
 } from '../../server/services/consentKeywords';
 import { mapToFarmTopic } from '../../server/services/farmTopics';
 import { matchForbiddenTopic } from '../../server/services/guards';
+import { looksSpanish } from '../../server/services/language';
+import { roleApplies } from '../../server/services/roles';
 import { routeInbound } from '../../server/services/router';
+import { parseVideoUrl } from '../../server/services/video';
 import { classifyTopicByKeywords } from '../../server/services/topics';
 import { windowState } from '../../server/services/window';
 import { computeScheduledFor } from '../../server/lib/time';
 import fixtureJson from './fixture.json';
+import audioManifestJson from './audioManifest.json';
 
 type Row = Record<string, any>;
 
@@ -73,6 +77,18 @@ const ts = (v: string | null | undefined) => (v ? new Date(v).getTime() : 0);
 const dateOf = (v: string | null | undefined) => (v ? new Date(v) : null);
 
 const SILENCE_URL = './demo-silence.mp3';
+
+// Optional pre-rendered demo audio (scripts/render-demo-audio.ts writes this
+// when an OPENAI_API_KEY is present at build time). Empty by default → the demo
+// serves the silent placeholder, exactly as before. Real entries are relative
+// paths like "./demo-audio/module-<id>.ogg".
+const audioManifest = audioManifestJson as Record<string, string>;
+const DEMO_AUDIO_PREFIX = './demo-audio/';
+
+/** Pre-rendered lesson audio for a module, or the silent placeholder. */
+function moduleAudioUrl(moduleId: string): string {
+  return audioManifest[`module:${moduleId}`] ?? SILENCE_URL;
+}
 
 function fail(status: number, message: string): never {
   throw new ApiError(message, status);
@@ -240,15 +256,15 @@ function deliverModule(delivery: Row): boolean {
   const module = s.modules.find((m) => m.id === delivery.moduleId)!;
   const enrollment = s.enrollments.find((e) => e.id === delivery.enrollmentId)!;
   const total = s.modules.filter((m) => m.trackId === module.trackId).length;
-  const text = [
-    ES.moduleHeader(module.orderIndex + 1, total, module.title),
-    '',
-    module.bodyEs,
-    '',
-    ES.checkPrompt(module.checkQuestionEs, module.checkOptionsEs),
-  ].join('\n');
+  const lines = [ES.moduleHeader(module.orderIndex + 1, total, module.title), '', module.bodyEs];
+  // Optional video: append the same link line the real drip sends.
+  if (module.videoUrl) {
+    lines.push('', ES.videoLine(module.videoTitleEs || module.title, module.videoUrl));
+  }
+  lines.push('', ES.checkPrompt(module.checkQuestionEs, module.checkOptionsEs));
+  const text = lines.join('\n');
   pushMessage(enrollment.workerId, { direction: 'outbound', type: 'text', bodyText: text });
-  pushMessage(enrollment.workerId, { direction: 'outbound', type: 'voice', audioReplyUrl: SILENCE_URL });
+  pushMessage(enrollment.workerId, { direction: 'outbound', type: 'voice', audioReplyUrl: moduleAudioUrl(module.id) });
   delivery.status = 'sent';
   delivery.sentAt = nowIso();
   logEvent(enrollment.workerId, {
@@ -479,6 +495,20 @@ function handleInbound(workerId: string, kind: 'text' | 'voice', text: string): 
       replyText(ES.helpEscalated);
       return;
     case 'question': {
+      // Mirror of processInbound: a non-Spanish free-form question gets the
+      // Spanish-only nudge (a normal interaction, not an escalation) instead of
+      // running retrieval.
+      if (!looksSpanish(text)) {
+        replyText(ES.spanishOnly);
+        logEvent(workerId, {
+          eventType: 'qa_interaction',
+          topic: 'Otro',
+          questionText: text,
+          answerText: ES.spanishOnly,
+          confidence: null,
+        });
+        return;
+      }
       const guard = matchForbiddenTopic(text);
       if (guard) {
         replyText(ES.forbidden);
@@ -563,7 +593,11 @@ function workerListItem(w: Row) {
 }
 
 function rewriteAudio(m: Row): Row {
-  return { ...m, audioReplyUrl: m.audioReplyUrl ? SILENCE_URL : null };
+  if (!m.audioReplyUrl) return { ...m, audioReplyUrl: null };
+  // Pre-rendered demo audio is real and playable; everything else (seed TTS
+  // placeholders, runtime replies) collapses to the silent placeholder.
+  if (String(m.audioReplyUrl).startsWith(DEMO_AUDIO_PREFIX)) return m;
+  return { ...m, audioReplyUrl: SILENCE_URL };
 }
 
 // ── the dispatcher ───────────────────────────────────────────────────────────
@@ -685,6 +719,7 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
       hiredAt: nowIso(),
       lastInboundAt: null,
       notes: body.notes ?? null,
+      jobRole: body.jobRole ?? null,
       consentStatus: 'pending', // adding a worker is NOT opt-in (Meta policy)
       consentedAt: null,
       consentMethod: null,
@@ -706,6 +741,14 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
       (e) => e.workerId === worker.id && e.trackId === track.id && e.status === 'active',
     );
     if (existing) return { enrollmentId: existing.id, created: false };
+    // Role scoping (mirror of enrollWorker): universal modules + only the
+    // role-specific modules that apply to this worker's role.
+    const applicable = s.modules.filter(
+      (m) => m.trackId === track.id && roleApplies(m.appliesToRoles, worker.jobRole ?? null),
+    );
+    if (applicable.length === 0) {
+      fail(400, "No modules in this track apply to this worker's role");
+    }
     const startedAt = new Date();
     const enr = {
       id: uuid(),
@@ -717,7 +760,7 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
       createdAt: nowIso(),
     };
     s.enrollments.push(enr);
-    for (const m of s.modules.filter((m) => m.trackId === track.id)) {
+    for (const m of applicable) {
       s.deliveries.push({
         id: uuid(),
         enrollmentId: enr.id,
@@ -894,7 +937,17 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
   if (seg[1] === 'tracks' && seg[2] && seg[3] === 'modules' && method === 'POST') {
     const track = s.tracks.find((t) => t.id === seg[2]) ?? fail(404, 'Track not found');
     const max = Math.max(-1, ...s.modules.filter((m) => m.trackId === track.id).map((m) => m.orderIndex));
-    const row = { id: uuid(), trackId: track.id, orgId: s.org.id, orderIndex: max + 1, sourceDocumentId: null, ...body };
+    const video = body.videoUrl ? parseVideoUrl(body.videoUrl) : null;
+    const row = {
+      id: uuid(),
+      trackId: track.id,
+      orgId: s.org.id,
+      orderIndex: max + 1,
+      sourceDocumentId: null,
+      ...body,
+      videoUrl: video?.url ?? null,
+      videoProvider: video?.provider ?? null,
+    };
     s.modules.push(row);
     return row;
   }
@@ -921,6 +974,11 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
       return { ok: true };
     }
     Object.assign(module, body);
+    if ('videoUrl' in body) {
+      const video = body.videoUrl ? parseVideoUrl(body.videoUrl) : null;
+      module.videoUrl = video?.url ?? null;
+      module.videoProvider = video?.provider ?? null;
+    }
     return module;
   }
 

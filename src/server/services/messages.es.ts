@@ -1,5 +1,5 @@
 /**
- * Every canned worker-facing string lives here. Simple Spanish, 5th–6th
+ * Every canned worker-facing string lives here. Simple Spanish, 3rd–5th
  * grade reading level, short sentences, warm tone.
  */
 export const ES = {
@@ -22,6 +22,9 @@ export const ES = {
   imageNotSupported:
     'Por ahora no puedo ver fotos. 📷 Mándame tu pregunta por texto o por audio y con gusto te ayudo.',
 
+  spanishOnly:
+    'Por ahora solo contesto en español 🙏. Escribe tu pregunta en español y con gusto te ayudo.',
+
   slowDown: 'Vas muy rápido 😅 Espera un momentito y vuelve a escribirme.',
 
   checkCorrect: '✅ ¡Correcto! Muy bien.',
@@ -36,6 +39,9 @@ export const ES = {
 
   moduleHeader: (index: number, total: number, title: string) =>
     `📚 Lección ${index} de ${total}: *${title}*`,
+
+  /** Optional video line appended to a lesson (the link unfurls in WhatsApp). */
+  videoLine: (title: string, url: string) => `📹 Mira el video (${title}): ${url}`,
 
   checkReminderFreeform: (title: string) =>
     `Hola 👋 Te falta responder la pregunta de tu lección "${title}". ` +

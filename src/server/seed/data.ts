@@ -1,5 +1,7 @@
 /** Static demo data for "Rancho Vista Lechería" (Jerome, Idaho). */
 
+import type { WorkerRole } from '../db/schema.js';
+
 export const DEMO_ORG = {
   name: 'Rancho Vista Lechería',
   timezone: 'America/Boise',
@@ -17,17 +19,19 @@ export const DEMO_OWNER = {
 /**
  * hoursAgo → last_inbound_at (null = never messaged); daysEmployed → hired_at.
  * The consent/agreement mix is deliberate so the demo shows every state:
- *   María   opted_in, agreement signed 380d ago (annual RENEWAL DUE), track
- *           completed + supervisor signed off
- *   José    opted_in (imported), agreement on paper, track completed but
- *           NOT signed off (flagged)
- *   Ana     opted_in, agreement never signed
- *   Carlos  OPTED OUT (texted BAJA) — all sends blocked
- *   Luz     opted_in, agreement signed recently via WhatsApp
- *   Pedro   opted_in, mid-track, agreement SENT awaiting ACEPTO (try it in
- *           the simulator)
- *   Rosa    PENDING — enrolled but never messaged: "awaiting opt-in", drip
- *           skips her (text ALTA as her in the simulator to watch the
+ *   María   ordeño; opted_in, agreement signed 380d ago (annual RENEWAL DUE),
+ *           track completed + supervisor signed off
+ *   José    alimentación; opted_in (imported), agreement on paper, track
+ *           completed but NOT signed off (flagged)
+ *   Ana     becerras; opted_in, agreement never signed — enrolling her shows
+ *           the role wedge (calf-care + universal lessons, NOT milking)
+ *   Carlos  salud del hato; OPTED OUT (texted BAJA) — all sends blocked
+ *   Luz     ordeño; opted_in, agreement signed recently via WhatsApp —
+ *           enrolling her shows the milking lesson set (contrast with Ana)
+ *   Pedro   general; opted_in, mid-track, agreement SENT awaiting ACEPTO (try
+ *           it in the simulator)
+ *   Rosa    becerras; PENDING — enrolled but never messaged: "awaiting opt-in",
+ *           drip skips her (text ALTA as her in the simulator to watch the
  *           disclosure + opt-in flow)
  */
 export interface DemoWorker {
@@ -35,6 +39,8 @@ export interface DemoWorker {
   phone: string;
   hoursAgo: number | null;
   daysEmployed: number;
+  /** Job role for role-scoped onboarding (null = unassigned → universal only). */
+  jobRole: WorkerRole | null;
   consent: 'pending' | 'opted_in' | 'opted_out';
   consentMethod: 'whatsapp_keyword' | 'paper_form' | 'imported' | null;
   consentDaysAgo: number | null;
@@ -47,36 +53,43 @@ export interface DemoWorker {
 export const DEMO_WORKERS: DemoWorker[] = [
   {
     name: 'María Guadalupe Ramírez', phone: '+12085550101', hoursAgo: 2, daysEmployed: 420,
+    jobRole: 'ordeno',
     consent: 'opted_in', consentMethod: 'whatsapp_keyword', consentDaysAgo: 420,
     agreement: { method: 'whatsapp', daysAgo: 380 },
   },
   {
     name: 'José Luis Hernández', phone: '+12085550102', hoursAgo: 30, daysEmployed: 250,
+    jobRole: 'alimentacion',
     consent: 'opted_in', consentMethod: 'imported', consentDaysAgo: 250,
     agreement: { method: 'paper', daysAgo: 200, attestedBy: 'Sarah Whitfield' },
   },
   {
     name: 'Ana Sofía Torres', phone: '+12085550103', hoursAgo: 3, daysEmployed: 150,
+    jobRole: 'becerras',
     consent: 'opted_in', consentMethod: 'whatsapp_keyword', consentDaysAgo: 150,
     agreement: null,
   },
   {
     name: 'Carlos Mendoza Ríos', phone: '+12085550104', hoursAgo: 120, daysEmployed: 95,
+    jobRole: 'salud_hato',
     consent: 'opted_out', consentMethod: 'whatsapp_keyword', consentDaysAgo: 5,
     agreement: null,
   },
   {
     name: 'Luz Elena Vargas', phone: '+12085550105', hoursAgo: 1, daysEmployed: 60,
+    jobRole: 'ordeno',
     consent: 'opted_in', consentMethod: 'whatsapp_keyword', consentDaysAgo: 60,
     agreement: { method: 'whatsapp', daysAgo: 30 },
   },
   {
     name: 'Pedro Aguilar Sánchez', phone: '+12085550106', hoursAgo: 1, daysEmployed: 3,
+    jobRole: 'general',
     consent: 'opted_in', consentMethod: 'whatsapp_keyword', consentDaysAgo: 3,
     agreement: null, agreementPending: true,
   },
   {
     name: 'Rosa Imelda Castillo', phone: '+12085550107', hoursAgo: null, daysEmployed: 1,
+    jobRole: 'becerras',
     consent: 'pending', consentMethod: null, consentDaysAgo: null,
     agreement: null,
   },
@@ -97,7 +110,9 @@ export type SopKey = (typeof DEMO_SOPS)[number]['key'];
 export const DEMO_TRACK = {
   name: 'Inducción — Primeras 2 semanas',
   description:
-    'Programa de bienvenida para trabajadores nuevos: rutina de ordeño, seguridad con químicos, manejo de animales, becerras y lavado de sala.',
+    'Programa de bienvenida con entrega por rol: las lecciones universales ' +
+    '(químicos, manejo de animales) llegan a todos; las de ordeño y lavado de ' +
+    'sala solo a ordeñadores, y la de calostro solo a quienes cuidan becerras.',
 };
 
 export interface DemoModule {
@@ -118,6 +133,12 @@ export interface DemoModule {
     | 'fitness_to_transport'
     | 'safety_other'
     | 'none';
+  /** Role targeting: [] (empty) = universal (every role gets it). */
+  appliesToRoles: WorkerRole[];
+  /** Optional video LINK (never hosted/clipped). Most modules have none. */
+  videoUrl?: string;
+  videoTitleEs?: string;
+  videoLangs?: string[];
 }
 
 export const DEMO_MODULES: DemoModule[] = [
@@ -139,6 +160,7 @@ export const DEMO_MODULES: DemoModule[] = [
     checkCorrectIndex: 1,
     sopKey: 'ordeno',
     farmTopic: 'none',
+    appliesToRoles: ['ordeno'],
   },
   {
     dayOffset: 1,
@@ -155,6 +177,7 @@ export const DEMO_MODULES: DemoModule[] = [
     checkCorrectIndex: 1,
     sopKey: 'ordeno',
     farmTopic: 'none',
+    appliesToRoles: ['ordeno'],
   },
   {
     dayOffset: 2,
@@ -173,6 +196,7 @@ export const DEMO_MODULES: DemoModule[] = [
     checkCorrectIndex: 2,
     sopKey: 'quimicos',
     farmTopic: 'safety_other',
+    appliesToRoles: [], // universal — chemical safety is for everyone
   },
   {
     dayOffset: 4,
@@ -191,6 +215,17 @@ export const DEMO_MODULES: DemoModule[] = [
     checkCorrectIndex: 0,
     sopKey: 'manejo',
     farmTopic: 'stockmanship_general',
+    appliesToRoles: [], // universal — low-stress handling is for everyone
+    // Capability demo only: a PUBLIC video link attached to one module to show
+    // the optional per-module video feature. Establo never hosts, uploads,
+    // downloads, or clips video — it only sends/embeds a link. Re-hosting or
+    // clipping someone else's video requires their written permission;
+    // embedding a public link is the supported pattern. This is a placeholder
+    // sample — a real farm replaces it with its own or a licensed/extension
+    // video on low-stress cattle handling.
+    videoUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+    videoTitleEs: 'Ejemplo: manejo de ganado de bajo estrés',
+    videoLangs: ['es', 'en'],
   },
   {
     dayOffset: 7,
@@ -208,6 +243,7 @@ export const DEMO_MODULES: DemoModule[] = [
     checkCorrectIndex: 1,
     sopKey: 'becerras',
     farmTopic: 'preweaned_calf',
+    appliesToRoles: ['becerras'],
   },
   {
     dayOffset: 10,
@@ -230,6 +266,7 @@ export const DEMO_MODULES: DemoModule[] = [
     checkCorrectIndex: 1,
     sopKey: 'cip',
     farmTopic: 'none',
+    appliesToRoles: ['ordeno'],
   },
 ];
 

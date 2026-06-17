@@ -415,3 +415,116 @@ describe('drip engine: 24h window, template handshake, checks, certificate', () 
     expect(recent.some((m) => m.bodyText?.includes('La respuesta correcta es: 2) Una por vaca'))).toBe(true);
   });
 });
+
+describe('role-scoped onboarding', () => {
+  it('delivers universal + role-specific modules; two roles get different sets', async () => {
+    // A track with one universal module and one per role.
+    const [track] = await db
+      .insert(onboardingTracks)
+      .values({ orgId: orgA.id, name: 'Inducción por rol' })
+      .returning();
+    await db.insert(modules).values([
+      {
+        trackId: track.id, orgId: orgA.id, orderIndex: 0, dayOffset: 0, sendHourLocal: 7,
+        title: 'Seguridad de químicos (universal)', bodyEs: 'Nunca mezcles cloro con ácido.',
+        checkQuestionEs: '¿Mezclar cloro con ácido?', checkOptionsEs: ['Sí', 'No', 'A veces'],
+        checkCorrectIndex: 1, appliesToRoles: [],
+      },
+      {
+        trackId: track.id, orgId: orgA.id, orderIndex: 1, dayOffset: 1, sendHourLocal: 7,
+        title: 'Rutina de ordeño', bodyEs: 'El pre-dip se deja 30 segundos.',
+        checkQuestionEs: '¿Cuánto dura el pre-dip?', checkOptionsEs: ['5 s', '30 s', '5 min'],
+        checkCorrectIndex: 1, appliesToRoles: ['ordeno'],
+      },
+      {
+        trackId: track.id, orgId: orgA.id, orderIndex: 2, dayOffset: 2, sendHourLocal: 7,
+        title: 'Calostro de la becerra', bodyEs: '4 litros en las primeras 2 horas.',
+        checkQuestionEs: '¿Cuánto calostro?', checkOptionsEs: ['1 L', '4 L', 'Nada'],
+        checkCorrectIndex: 1, appliesToRoles: ['becerras'],
+      },
+    ]);
+
+    const [milker] = await db
+      .insert(workers)
+      .values({ orgId: orgA.id, name: 'Ordeñador', phoneE164: '+15005550010', jobRole: 'ordeno' })
+      .returning();
+    const [calfHand] = await db
+      .insert(workers)
+      .values({ orgId: orgA.id, name: 'Becerrero', phoneE164: '+15005550011', jobRole: 'becerras' })
+      .returning();
+
+    const milkerEnr = await enrollWorker(db, { workerId: milker.id, trackId: track.id });
+    const calfEnr = await enrollWorker(db, { workerId: calfHand.id, trackId: track.id });
+
+    const titlesFor = async (enrollmentId: string): Promise<string[]> => {
+      const rows = await db
+        .select({ title: modules.title })
+        .from(moduleDeliveries)
+        .innerJoin(modules, eq(moduleDeliveries.moduleId, modules.id))
+        .where(eq(moduleDeliveries.enrollmentId, enrollmentId));
+      return rows.map((r) => r.title);
+    };
+    const milkerTitles = await titlesFor(milkerEnr.enrollmentId);
+    const calfTitles = await titlesFor(calfEnr.enrollmentId);
+
+    expect(milkerTitles.sort()).toEqual(['Rutina de ordeño', 'Seguridad de químicos (universal)']);
+    expect(calfTitles.sort()).toEqual(['Calostro de la becerra', 'Seguridad de químicos (universal)']);
+  });
+
+  it('a worker whose role matches no module (and no universal exists) cannot enroll', async () => {
+    const [track] = await db
+      .insert(onboardingTracks)
+      .values({ orgId: orgA.id, name: 'Solo ordeño' })
+      .returning();
+    await db.insert(modules).values({
+      trackId: track.id, orgId: orgA.id, orderIndex: 0, dayOffset: 0, sendHourLocal: 7,
+      title: 'Solo para ordeñadores', bodyEs: 'Rutina de ordeño.',
+      checkQuestionEs: '¿Listo?', checkOptionsEs: ['Sí', 'No', 'Tal vez'],
+      checkCorrectIndex: 0, appliesToRoles: ['ordeno'],
+    });
+    const [feeder] = await db
+      .insert(workers)
+      .values({ orgId: orgA.id, name: 'Alimentador', phoneE164: '+15005550012', jobRole: 'alimentacion' })
+      .returning();
+    await expect(enrollWorker(db, { workerId: feeder.id, trackId: track.id })).rejects.toThrow(/role/);
+  });
+});
+
+describe('optional per-module video', () => {
+  it('delivers a module with a video as a link line (never an upload)', async () => {
+    const [track] = await db
+      .insert(onboardingTracks)
+      .values({ orgId: orgA.id, name: 'Track con video' })
+      .returning();
+    await db.insert(modules).values({
+      trackId: track.id, orgId: orgA.id, orderIndex: 0, dayOffset: 0, sendHourLocal: 7,
+      title: 'Lección con video', bodyEs: 'Mira el video y luego responde.',
+      checkQuestionEs: '¿Listo?', checkOptionsEs: ['Sí', 'No', 'Tal vez'], checkCorrectIndex: 0,
+      videoUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+      videoTitleEs: 'Manejo de ganado', videoProvider: 'youtube', videoLangs: ['es'],
+    });
+    const [w] = await db
+      .insert(workers)
+      .values({
+        orgId: orgA.id, name: 'Video Worker', phoneE164: '+15005550020',
+        lastInboundAt: new Date(), consentStatus: 'opted_in',
+      })
+      .returning();
+    await enrollWorker(db, { workerId: w.id, trackId: track.id });
+    const tick = await runDripTick(db); // window open → delivered immediately
+    expect(tick.delivered).toBeGreaterThanOrEqual(1);
+
+    const recent = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.orgId, orgA.id))
+      .orderBy(desc(messages.createdAt))
+      .limit(6);
+    const lesson = recent.find((m) => m.bodyText?.includes('Lección con video'));
+    expect(lesson?.bodyText).toContain(
+      '📹 Mira el video (Manejo de ganado): https://www.youtube.com/watch?v=jNQXAC9IVRw',
+    );
+    // It is a link in the text, not a media upload.
+    expect(lesson?.mediaUrl ?? null).toBeNull();
+  });
+});

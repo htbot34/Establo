@@ -25,10 +25,18 @@ const RULES: Array<{ category: ForbiddenCategory; topic: Topic; patterns: RegExp
   {
     category: 'employment',
     topic: 'Otro',
+    // Pay-stem coverage is enumerated by conjugation/phrase on purpose: a bare
+    // /\bpag/ would false-match "página" (after accent-stripping → "pagina").
+    // Word boundaries also keep "apagar"/"apago" (turn off the pump) clear.
     patterns: [
       /\bsueldo\b/, /\bsalario\b/, /aumento\b/, /\braise\b/, /me pueden? pagar/, /\bpago de horas/,
       /horas extras?\b/, /\bdespid/, /\brenunci/, /\bcontrato\b/, /\bvacaciones\b/, /\bbono\b/,
       /d[i]as de descanso/, /seguro medico/,
+      // Pay verbs/nouns: pagan, paga, pago, pagos, pagas, pagar(me/nos/le),
+      // págame, paguen(me), pagaron, pagaran, pagará, pagaría — never "pagina".
+      /\bpagan\b/, /\bpaga\b/, /\bpagas\b/, /\bpago\b/, /\bpagos\b/, /\bpagame\b/,
+      /\bpagar(me|nos|le|les)?\b/, /\bpaguen(me|nos)?\b/, /\bpagaron\b/,
+      /\bpagar[ae]n?\b/, /\bpagaria\b/,
     ],
   },
   {

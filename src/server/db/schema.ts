@@ -10,6 +10,12 @@ import {
   uuid,
   vector,
 } from 'drizzle-orm/pg-core';
+// Source of truth for the role enum lives in the pure (browser-safe) roles
+// module; re-exported here so the rest of the server keeps importing it from
+// the schema as before.
+import { WORKER_ROLES, type WorkerRole } from '../services/roles.js';
+
+export { WORKER_ROLES, type WorkerRole };
 
 const id = () => uuid('id').primaryKey().defaultRandom();
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
@@ -66,6 +72,8 @@ export const workers = pgTable(
     hiredAt: timestamp('hired_at', { withTimezone: true }),
     lastInboundAt: timestamp('last_inbound_at', { withTimezone: true }),
     notes: text('notes'),
+    // Job role for role-scoped onboarding (null = unassigned → universal only).
+    jobRole: text('job_role', { enum: WORKER_ROLES }),
     // WhatsApp opt-in state (Meta policy): no business-initiated sends unless
     // 'opted_in'. consented_at/consent_method record the latest transition.
     consentStatus: text('consent_status', { enum: CONSENT_STATUSES })
@@ -179,6 +187,15 @@ export const modules = pgTable(
     sendHourLocal: integer('send_hour_local').notNull().default(7),
     // FARM Animal Care v5 continuing-education area, set by the manager.
     farmTopic: text('farm_topic', { enum: FARM_TOPICS }).notNull().default('none'),
+    // Role targeting: which job roles receive this module. null/empty = applies
+    // to ALL roles (universal). See services/roles.ts → roleApplies().
+    appliesToRoles: jsonb('applies_to_roles').$type<string[]>(),
+    // Optional per-module video (a LINK we send/embed — never hosted or clipped).
+    // provider is informational (youtube|vimeo|url); see services/video.ts.
+    videoUrl: text('video_url'),
+    videoTitleEs: text('video_title_es'),
+    videoProvider: text('video_provider'),
+    videoLangs: jsonb('video_langs').$type<string[]>(),
     title: text('title').notNull(),
     bodyEs: text('body_es').notNull(),
     checkQuestionEs: text('check_question_es').notNull(),

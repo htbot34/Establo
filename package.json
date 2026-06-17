@@ -12,6 +12,7 @@
     "build": "vite build",
     "build:demo": "VITE_DEMO=1 vite build --base=./ --outDir=../../dist/demo --emptyOutDir",
     "export-demo-fixture": "tsx scripts/export-demo-fixture.ts",
+    "render-demo-audio": "tsx scripts/render-demo-audio.ts",
     "start": "tsx src/server/index.ts",
     "migrate": "tsx src/server/db/migrate.ts",
     "seed": "tsx src/server/seed/index.ts",

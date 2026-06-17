@@ -14,6 +14,7 @@ import {
 import { computeScheduledFor } from '../lib/time.js';
 import { generateCertificate } from './certificates.js';
 import { ES } from './messages.es.js';
+import { roleApplies } from './roles.js';
 import { sendToWorker } from './sendToWorker.js';
 import { synthesizeSpeech } from './speech.js';
 import { classifyTopicByKeywords } from './topics.js';
@@ -24,13 +25,15 @@ function firstName(fullName: string): string {
   return fullName.split(/\s+/)[0] ?? fullName;
 }
 
-/** Strip the citation line + emoji for text-to-speech (reads awkwardly aloud). */
+/** Strip the citation line + emoji for text-to-speech (reads awkwardly aloud).
+ *  The video line keeps a spoken mention but drops the URL (unspeakable). */
 export function ttsVariant(text: string): string {
   return text
     .split('\n')
     .filter((l) => !l.includes('📄 Fuente:'))
+    .map((l) => (l.includes('📹') ? 'Te mandé también un video sobre esto. Míralo en el mensaje.' : l))
     .join('\n')
-    .replace(/[📚📄✅🎉👋🙏💪😅😊🐄📷]/gu, '')
+    .replace(/[📚📄📹✅🎉👋🙏💪😅😊🐄📷]/gu, '')
     .trim();
 }
 
@@ -66,6 +69,12 @@ export async function enrollWorker(
 
   const trackModules = await db.select().from(modules).where(eq(modules.trackId, track.id));
   if (trackModules.length === 0) throw new Error('Track has no modules');
+  // Role scoping: deliver universal modules + only the role-specific modules
+  // that apply to this worker's role.
+  const applicable = trackModules.filter((m) => roleApplies(m.appliesToRoles, worker.jobRole));
+  if (applicable.length === 0) {
+    throw new Error("No modules in this track apply to this worker's role");
+  }
   const startedAt = args.startedAt ?? new Date();
 
   const [enr] = await db
@@ -74,7 +83,7 @@ export async function enrollWorker(
     .returning();
 
   await db.insert(moduleDeliveries).values(
-    trackModules.map((m) => ({
+    applicable.map((m) => ({
       enrollmentId: enr.id,
       moduleId: m.id,
       orgId: worker.orgId,
@@ -86,13 +95,18 @@ export async function enrollWorker(
 }
 
 function composeModuleMessage(module: Module, orderIndex: number, total: number): string {
-  return [
+  const lines = [
     ES.moduleHeader(orderIndex + 1, total, module.title),
     '',
     module.bodyEs,
-    '',
-    ES.checkPrompt(module.checkQuestionEs, module.checkOptionsEs),
-  ].join('\n');
+  ];
+  // Optional video: append a link line (it unfurls in WhatsApp). We never
+  // upload/host video — just send the link the manager attached.
+  if (module.videoUrl) {
+    lines.push('', ES.videoLine(module.videoTitleEs || module.title, module.videoUrl));
+  }
+  lines.push('', ES.checkPrompt(module.checkQuestionEs, module.checkOptionsEs));
+  return lines.join('\n');
 }
 
 /**

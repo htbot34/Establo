@@ -29,6 +29,7 @@ import { ingestDocument } from '../services/ingestion.js';
 import { usingStubEmbeddings } from '../services/embeddings.js';
 import { ES } from '../services/messages.es.js';
 import { synthesizeSpeech } from '../services/speech.js';
+import { parseVideoUrl } from '../services/video.js';
 import {
   DEMO_MODULES,
   DEMO_ORG,
@@ -133,6 +134,7 @@ export async function seed(): Promise<void> {
         status: 'active' as const,
         hiredAt: new Date(now - w.daysEmployed * 86_400_000),
         lastInboundAt: w.hoursAgo === null ? null : new Date(now - w.hoursAgo * 3_600_000),
+        jobRole: w.jobRole,
         consentStatus: w.consent,
         consentMethod: w.consentMethod,
         consentedAt: w.consentDaysAgo === null ? null : daysAgo(w.consentDaysAgo),
@@ -207,6 +209,11 @@ export async function seed(): Promise<void> {
         dayOffset: m.dayOffset,
         sendHourLocal: m.sendHourLocal,
         farmTopic: m.farmTopic,
+        appliesToRoles: m.appliesToRoles,
+        videoUrl: m.videoUrl ?? null,
+        videoTitleEs: m.videoTitleEs ?? null,
+        videoProvider: m.videoUrl ? (parseVideoUrl(m.videoUrl)?.provider ?? null) : null,
+        videoLangs: m.videoLangs ?? null,
         title: m.title,
         bodyEs: m.bodyEs,
         checkQuestionEs: m.checkQuestionEs,

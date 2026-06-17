@@ -29,7 +29,11 @@ fly postgres attach <your-app-name>-db --app <your-app-name>
 
 Fly Postgres (postgres-flex) ships the pgvector extension; the first migration
 runs `CREATE EXTENSION IF NOT EXISTS vector`. The release command
-(`pnpm migrate`, see fly.toml) applies migrations on every deploy.
+(`pnpm migrate`, see fly.toml) applies migrations on every deploy — no extra
+step for new ones. Migrations `0002_roles.sql` (worker `job_role` + module
+`applies_to_roles`) and `0003_video.sql` (module `video_*` fields) are
+**additive and nullable**, so they apply cleanly on top of an existing
+`0000`/`0001` database with all rows intact.
 
 ## 4. Volume for uploads/audio/PDFs
 

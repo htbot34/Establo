@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, fmtDateTime, IS_DEMO, timeAgo } from '../api';
 import { Badge, Button, Card, EmptyState, PageHeader, Spinner, statusBadge } from '../components';
+import { videoFromText } from '../../server/services/video';
 
 interface Conv {
   id: string;
@@ -124,6 +125,22 @@ export default function Conversations() {
                       )}
                       {m.type === 'template' && <div className="mb-1 text-xs opacity-70">📋 template</div>}
                       <p className="whitespace-pre-wrap">{m.bodyText ?? m.transcriptText ?? ''}</p>
+                      {m.direction === 'outbound' &&
+                        m.bodyText &&
+                        (() => {
+                          const v = videoFromText(m.bodyText);
+                          return v?.embedUrl ? (
+                            <div className="mt-1.5 aspect-video w-56 overflow-hidden rounded-lg border border-white/30">
+                              <iframe
+                                src={v.embedUrl}
+                                title="video de la lección"
+                                className="h-full w-full"
+                                allow="encrypted-media; picture-in-picture"
+                                allowFullScreen
+                              />
+                            </div>
+                          ) : null;
+                        })()}
                       {m.audioReplyUrl &&
                         (IS_DEMO ? (
                           <div className="mt-1.5 w-fit rounded-full bg-black/10 px-3 py-1 text-xs opacity-90">

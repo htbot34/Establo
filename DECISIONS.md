@@ -282,3 +282,74 @@ so the browser build never imports `pg`).
   title that does not exist in the org. The committed starter set pins the
   numeric facts (30 s pre-dip, 4 L colostrum, 22% Brix, 71–77 °C…) so prompt
   regressions surface as failed facts, not vibes.
+
+## Reading level (3rd–5th grade)
+
+Anabel and the IDA reviewer asked for a 3rd–5th-grade reading level for
+low-literacy workers. The lever is the LLM-generated output, so the rule lives
+in the prompts (`prompts/answer.es.md`, `prompts/modules.es.md`): 3.º–5.º grade,
+~80–90 words, one idea per short sentence, everyday words, and any unavoidable
+technical term explained in parentheses. The canned strings (`messages.es.ts`)
+are already at this level by construction.
+
+The static demo answers extractively — verbatim SOP excerpts with a citation,
+no Claude — so its reading level is governed by the **SOP source text**, not by
+this prompt. This guardrail primarily governs live (Claude) output. We did not
+add a reading-level unit test: the eval harness pins facts/grounding, and a
+brittle readability metric would fight the prompt rather than protect it.
+
+## Role-scoped onboarding
+
+The role model is `job_role` on the **worker** + `applies_to_roles` on the
+**module**; a module is universal when `applies_to_roles` is null/empty.
+Enrollment delivers universal modules plus only the role-specific modules that
+apply (`roleApplies`). Tracks stay the enrollment unit — role lives on the
+worker and per-module targeting decides delivery — so universal lessons aren't
+duplicated across role-specific tracks. An unassigned (null) role receives only
+universal modules; enrolling into a track where nothing applies throws a clear
+error rather than creating an empty enrollment.
+
+`WORKER_ROLES` is the single source of truth in the pure, dependency-free
+`services/roles.ts`; `db/schema.ts` imports it for the column enum and
+re-exports it. That ordering (schema consumes the pure module, not vice-versa)
+keeps the manager web bundle free of `drizzle-orm` — the same reason the FARM
+labels are kept out of the browser build. Columns are nullable/additive
+(migration `0002`), so existing rows stay universal/unassigned until a manager
+sets them.
+
+## Per-module video — link only, never hosted
+
+A module carries a video **link**, not media. Production sends the link
+(WhatsApp can't take YouTube uploads and has size limits; a link unfurls); the
+dashboard embeds a preview via the privacy-enhanced `youtube-nocookie` domain
+(YouTube) or the Vimeo player, and any other https link is sent as a plain link
+with no embed. We never host, upload, download, or clip video: re-hosting or
+clipping someone else's video requires their written permission, and embedding
+a public link is the supported pattern (the seed attaches ONE public sample
+link, clearly commented as a placeholder, to demonstrate the capability).
+`video_provider` is derived server-side from the URL (never trusted from the
+client). The TTS variant keeps a spoken "te mandé un video" mention but drops
+the unspeakable URL. Columns are nullable/additive (migration `0003`).
+
+## Spanish-only nudge for non-Spanish input
+
+`services/language.ts` is a cheap, deterministic Spanish-vs-other detector (no
+LLM): Spanish orthography (¿¡ñ + accents) is a hard yes; otherwise a Spanish
+function-word vs English-stopword count, biased to Spanish. It runs only on the
+free-form Q&A path (after consent/ALTA/BAJA/ACEPTO/OK/numeric routing), so it
+never intercepts those. Clear multi-word non-Spanish gets `ES.spanishOnly`
+instead of running retrieval; short/ambiguous input (a lone "mastitis", "ok",
+"pre-dip") stays Spanish so real workers aren't nagged. It's logged as a normal
+interaction, never an escalation — it is not a knowledge gap.
+
+## Optional pre-rendered demo audio
+
+Voice is a core value prop, but a static GitHub Pages demo has no server and no
+API key, so by default it serves a labeled silent placeholder (and the UI says
+so). `scripts/render-demo-audio.ts` is key-gated: when `OPENAI_API_KEY` is
+present it pre-renders real OGG/Opus lesson audio (reusing `synthesizeSpeech` +
+`ttsVariant`) into `src/web/public/demo-audio/` and writes a
+`module:<id>` → path manifest; `demoApi.ts` plays the real file when a manifest
+entry exists and falls back to the placeholder otherwise. With no key the
+manifest stays empty and behavior is identical to before — the production
+WhatsApp path is unchanged (it already synthesizes real TTS).
