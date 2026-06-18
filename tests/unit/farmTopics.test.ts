@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { FARM_CE_AREAS, isValidFarmTopic, mapToFarmTopic } from '../../src/server/services/farmTopics.js';
+import {
+  FARM_CE_AREAS,
+  expectedCeAreasForRole,
+  isValidFarmTopic,
+  mapToFarmTopic,
+} from '../../src/server/services/farmTopics.js';
 
 describe('FARM Animal Care v5 topic mapping (keyword table, no LLM)', () => {
   it('maps the <meta topic/> taxonomy to FARM areas', () => {
@@ -42,5 +47,33 @@ describe('FARM Animal Care v5 topic mapping (keyword table, no LLM)', () => {
     for (const area of FARM_CE_AREAS) expect(isValidFarmTopic(area)).toBe(true);
     expect(isValidFarmTopic('none')).toBe(true);
     expect(isValidFarmTopic('banana')).toBe(false);
+  });
+});
+
+describe('FARM v5 CE areas scoped to a worker job role (expectedCeAreasForRole)', () => {
+  it('milkers (ordeno) get only stockmanship, never euthanasia', () => {
+    expect(expectedCeAreasForRole('ordeno')).toEqual(['stockmanship_general']);
+    expect(expectedCeAreasForRole('ordeno')).not.toContain('euthanasia');
+  });
+
+  it('herd health (salud_hato) carries euthanasia and non-ambulatory', () => {
+    const areas = expectedCeAreasForRole('salud_hato');
+    expect(areas).toContain('euthanasia');
+    expect(areas).toContain('non_ambulatory');
+  });
+
+  it('calf care (becerras) carries pre-weaned calf plus stockmanship', () => {
+    const areas = expectedCeAreasForRole('becerras');
+    expect(areas).toContain('preweaned_calf');
+    expect(areas).toContain('stockmanship_general');
+  });
+
+  it('general covers all five FARM CE areas', () => {
+    expect(expectedCeAreasForRole('general')).toEqual(FARM_CE_AREAS);
+  });
+
+  it('null and unknown roles fall back to the stockmanship baseline', () => {
+    expect(expectedCeAreasForRole(null)).toEqual(['stockmanship_general']);
+    expect(expectedCeAreasForRole('tractorista')).toEqual(['stockmanship_general']);
   });
 });

@@ -21,7 +21,7 @@ import { toCsv } from '../lib/csv.js';
 import { formatDateEn, formatDateTimeEn } from '../lib/time.js';
 import { absPath, ensureDir, saveBuffer } from '../lib/storage.js';
 import { renewalDue } from './agreements.js';
-import { FARM_CE_AREAS, FARM_TOPIC_LABELS } from './farmTopics.js';
+import { FARM_CE_AREAS, FARM_TOPIC_LABELS, expectedCeAreasForRole } from './farmTopics.js';
 import { PDF_COLORS, drawTableRow, pdfToBuffer } from './pdf.js';
 import { generateWorkerTranscriptPdf } from './transcripts.js';
 
@@ -117,7 +117,7 @@ function summarize(
     }
   }
   for (const s of byWorker.values()) {
-    s.gaps = FARM_CE_AREAS.filter((a) => !s.byFarmArea.has(a));
+    s.gaps = expectedCeAreasForRole(s.worker.jobRole).filter((a) => !s.byFarmArea.has(a));
   }
   // Workers appear if they have activity OR compliance records worth showing.
   return [...byWorker.values()].filter(
@@ -189,11 +189,11 @@ async function buildLetterPdf(
       `This letter documents employee training and continuing education records for ${org.name}` +
         `${org.herdSize ? ` (approx. ${org.herdSize.toLocaleString()} cows)` : ''} for the period ` +
         `${formatDateEn(period.start, tz)} through ${formatDateEn(period.end, tz)}. Records are ` +
-        `organized consistent with the continuing-education expectations of the FARM Animal Care ` +
-        `Program, Version 5: general animal care and handling (stockmanship), plus the job-specific ` +
-        `areas of pre-weaned calf care, non-ambulatory animal management, euthanasia, and fitness to ` +
-        `transport. Per-employee cow care agreement signatures and supervisor sign-offs on completed ` +
-        `onboarding tracks are included.`,
+        `organized by the FARM Animal Care Program, Version 5 continuing-education areas relevant to ` +
+        `each employee's role — drawn from general animal care and handling (stockmanship), plus the ` +
+        `job-specific areas of pre-weaned calf care, non-ambulatory animal management, euthanasia, and ` +
+        `fitness to transport. Per-employee cow care agreement signatures and supervisor sign-offs on ` +
+        `completed onboarding tracks are included.`,
       { lineGap: 2 },
     );
     doc.moveDown(0.4);
@@ -261,9 +261,9 @@ async function buildLetterPdf(
     doc.moveDown(0.3);
     doc.font('Helvetica').fontSize(9).fillColor(PDF_COLORS.muted);
     doc.text(
-      'Each employee is shown against the five FARM v5 continuing-education areas. Areas with no ' +
-        'documented activity in this period are flagged so coverage gaps are visible before an ' +
-        'evaluation.',
+      'Each employee is shown against the FARM v5 continuing-education areas relevant to their job ' +
+        'role. Areas with no documented activity in this period are flagged so coverage gaps are ' +
+        'visible before an evaluation.',
       { lineGap: 2 },
     );
     doc.moveDown(0.8);
@@ -290,6 +290,7 @@ async function buildLetterPdf(
       }
       doc.moveDown(0.25);
 
+      const expected = expectedCeAreasForRole(s.worker.jobRole);
       for (const area of FARM_CE_AREAS) {
         const a = s.byFarmArea.get(area);
         if (a) {
@@ -306,7 +307,7 @@ async function buildLetterPdf(
               `${a.modulesDelivered} lesson(s)${checks}, ${a.qaCount} Q&A — ${range}`,
             { indent: 10 },
           );
-        } else {
+        } else if (expected.includes(area)) {
           doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#b45309');
           doc.text(`• No documented continuing education in: ${FARM_TOPIC_LABELS[area]}`, {
             indent: 10,

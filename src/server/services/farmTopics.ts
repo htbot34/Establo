@@ -1,13 +1,18 @@
 import { FARM_TOPICS, type FarmTopic } from '../db/schema.js';
+import { WORKER_ROLES, type WorkerRole } from './roles.js';
 import type { Topic } from './topics.js';
 
 /**
- * FARM Animal Care v5 continuing-education areas. Mandatory Corrective Action
- * Plans require annually documented CE per employee in general animal
- * care/handling plus job-specific CE for pre-weaned calf care, non-ambulatory
- * animals, euthanasia, and fitness to transport. Every training_event carries
- * one of these so the audit pack can group records the way an evaluator reads
- * them — and show the gaps.
+ * FARM Animal Care v5 continuing-education areas. v5 requires annually
+ * documented, JOB-SPECIFIC continuing education for each employee with animal-
+ * care responsibilities — only in the areas their job actually covers — across
+ * general animal care/handling (stockmanship), pre-weaned calf care, non-
+ * ambulatory animals, euthanasia, and fitness to transport. If the standard
+ * isn't met, v5 triggers a Mandatory Corrective Action Plan with up to a
+ * 9-month correction window (shortened from 3 years in v4). Every
+ * training_event carries one of these areas so the audit pack can group records
+ * the way an evaluator reads them, and flag missing areas against each worker's
+ * role (see expectedCeAreasForRole) rather than against all five.
  *
  * Q&A events are classified here with a keyword table over the question text
  * plus the <meta topic/> Claude already returns (NO extra LLM call). Drip
@@ -34,6 +39,34 @@ export const FARM_CE_AREAS: FarmTopic[] = [
   'euthanasia',
   'fitness_to_transport',
 ];
+
+/**
+ * Default FARM v5 CE areas implied by a worker's job role. FARM scopes CE to
+ * each employee's actual animal-care responsibilities, so the audit pack must
+ * not flag, e.g., a milker for missing euthanasia CE. These are sensible
+ * per-role DEFAULTS; a farm can refine which employees truly carry which duties.
+ */
+export const ROLE_CE_AREAS: Record<WorkerRole, FarmTopic[]> = {
+  ordeno: ['stockmanship_general'],
+  becerras: ['stockmanship_general', 'preweaned_calf'],
+  alimentacion: ['stockmanship_general'],
+  salud_hato: ['stockmanship_general', 'non_ambulatory', 'euthanasia', 'fitness_to_transport'],
+  general: [...FARM_CE_AREAS],
+};
+
+const BASELINE_CE_AREAS: FarmTopic[] = ['stockmanship_general'];
+
+/**
+ * Expected CE areas for a worker. An unknown/unassigned (null) role gets only
+ * the universal baseline (stockmanship) so we never invent obligations we can't
+ * support; an assigned role gets its mapped areas.
+ */
+export function expectedCeAreasForRole(jobRole: string | null | undefined): FarmTopic[] {
+  if (jobRole && (WORKER_ROLES as readonly string[]).includes(jobRole)) {
+    return ROLE_CE_AREAS[jobRole as WorkerRole];
+  }
+  return BASELINE_CE_AREAS;
+}
 
 export function isValidFarmTopic(t: string): t is FarmTopic {
   return (FARM_TOPICS as readonly string[]).includes(t);
