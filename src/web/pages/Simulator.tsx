@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { CheckCheck, ClipboardList, Clock, History, Mic, MessagesSquare, Send, Volume2 } from 'lucide-react';
 import { api, IS_DEMO, timeAgo } from '../api';
-import { Button, Card, consentBadge, PageHeader, Select, Spinner } from '../components';
+import { Badge, Button, Card, consentBadge, PageHeader, Select, Spinner } from '../components';
 import { looksSpanish } from '../../server/services/language';
 import { videoFromText } from '../../server/services/video';
 
@@ -132,12 +133,15 @@ export default function Simulator() {
     <div>
       <PageHeader
         title="WhatsApp Simulator"
-        subtitle="Mock mode only — play the role of a worker. Messages run through the real webhook pipeline."
+        subtitle="Play the role of a worker. Messages run through the real webhook pipeline."
+        actions={<Badge color="amber">mock mode</Badge>}
       />
       <div className="grid grid-cols-5 gap-4">
         <div className="col-span-2 space-y-3">
           <Card className="p-4">
-            <label className="mb-1 block text-xs font-medium text-stone-600">Acting as worker</label>
+            <label className="mb-1 block text-xs font-medium text-secondary-foreground">
+              Acting as worker
+            </label>
             <Select value={workerId} onChange={(e) => setWorkerId(e.target.value)}>
               {workers.map((w) => (
                 <option key={w.id} value={w.id}>
@@ -145,43 +149,46 @@ export default function Simulator() {
                 </option>
               ))}
             </Select>
-            <div className="mt-3 text-xs text-stone-500">
+            <div className="mt-3 text-xs text-muted-foreground">
               24h window:{' '}
               {open ? (
-                <span className="font-semibold text-green-700">OPEN</span>
+                <span className="font-semibold text-success">OPEN</span>
               ) : (
-                <span className="font-semibold text-red-600">CLOSED</span>
+                <span className="font-semibold text-destructive">CLOSED</span>
               )}{' '}
               — last inbound {timeAgo(conv?.lastInboundAt ?? worker?.lastInboundAt)}
             </div>
-            <div className="mt-1.5 flex items-center gap-2 text-xs text-stone-500">
+            <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
               Consent: {consentBadge(worker?.consentStatus)}
               {worker?.pendingAgreement && (
-                <span className="text-amber-700">📋 agreement awaiting ACEPTO</span>
+                <span className="inline-flex items-center gap-1 text-warning">
+                  <ClipboardList className="size-3.5" aria-hidden="true" /> agreement awaiting ACEPTO
+                </span>
               )}
             </div>
           </Card>
           <Card className="space-y-2 p-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-stone-400">
+            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Scheduler controls
             </h3>
-            <Button variant="secondary" className="w-full" onClick={() => void runDrip()}>
-              ⏰ Run drip scheduler now
+            <Button variant="secondary" className="w-full justify-start" onClick={() => void runDrip()}>
+              <Clock aria-hidden="true" /> Run drip scheduler now
             </Button>
-            <Button variant="secondary" className="w-full" onClick={() => void closeWindow()}>
-              🕐 Simulate &gt;24h since last message
+            <Button variant="secondary" className="w-full justify-start" onClick={() => void closeWindow()}>
+              <History aria-hidden="true" /> Simulate &gt;24h since last message
             </Button>
-            {dripNote && <p className="text-xs font-medium text-green-700">{dripNote}</p>}
-            <p className="text-xs text-stone-400">
+            {dripNote && <p className="text-xs font-medium text-success">{dripNote}</p>}
+            <p className="text-xs text-muted-foreground">
               Enroll this worker in a track (Workers page), close the window, then run the
-              scheduler to watch the template handshake: notify template → worker replies OK →
-              full lesson arrives.
+              scheduler to watch the template handshake: notify template, worker replies OK, then
+              the full lesson arrives.
             </p>
           </Card>
         </div>
 
         <div className="col-span-3">
-          <div className="overflow-hidden rounded-[2rem] border-8 border-stone-800 bg-stone-800 shadow-xl">
+          {/* Authentic WhatsApp chrome: fixed device + WhatsApp colors, theme-independent. */}
+          <div className="overflow-hidden rounded-[2rem] border-8 border-[#11161b] bg-[#11161b] shadow-xl">
             <div className="flex items-center gap-2 bg-emerald-800 px-4 py-3 text-white">
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-sm font-bold">
                 E
@@ -198,7 +205,7 @@ export default function Simulator() {
               {!conv ? (
                 <Spinner />
               ) : conv.messages.length === 0 ? (
-                <p className="pt-10 text-center text-xs text-stone-500">
+                <p className="pt-10 text-center text-xs text-[#667781]">
                   No hay mensajes. Escribe abajo como si fueras {worker?.name}.
                 </p>
               ) : (
@@ -213,18 +220,23 @@ export default function Simulator() {
                       }`}
                     >
                       {m.type === 'voice' && m.direction === 'inbound' && (
-                        <div className="mb-0.5 text-[10px] text-stone-500">🎤 nota de voz (transcrita)</div>
+                        <div className="mb-0.5 inline-flex items-center gap-1 text-[10px] text-[#667781]">
+                          <Mic className="size-3" aria-hidden="true" /> nota de voz (transcrita)
+                        </div>
                       )}
                       {m.type === 'template' && (
-                        <div className="mb-0.5 text-[10px] text-stone-500">📋 plantilla (fuera de ventana 24h)</div>
+                        <div className="mb-0.5 inline-flex items-center gap-1 text-[10px] text-[#667781]">
+                          <ClipboardList className="size-3" aria-hidden="true" /> plantilla (fuera de
+                          ventana 24h)
+                        </div>
                       )}
-                      <p className="whitespace-pre-wrap">{m.bodyText ?? m.transcriptText ?? ''}</p>
+                      <p className="whitespace-pre-wrap text-[#111b21]">{m.bodyText ?? m.transcriptText ?? ''}</p>
                       {m.direction === 'outbound' &&
                         m.bodyText &&
                         (() => {
                           const v = videoFromText(m.bodyText);
                           return v?.embedUrl ? (
-                            <div className="mt-1.5 aspect-video w-52 overflow-hidden rounded-lg border border-stone-200">
+                            <div className="mt-1.5 aspect-video w-52 overflow-hidden rounded-lg border border-black/10">
                               <iframe
                                 src={v.embedUrl}
                                 title="video de la lección"
@@ -237,25 +249,30 @@ export default function Simulator() {
                         })()}
                       {m.audioReplyUrl &&
                         (IS_DEMO && !m.audioReplyUrl.startsWith('./demo-audio/') ? (
-                          <div className="mt-1 w-fit rounded-full bg-stone-100 px-2.5 py-1 text-[10px] text-stone-500">
-                            🔊 respuesta de voz — silenciada en este demo (el sistema real envía audio TTS)
+                          <div className="mt-1 inline-flex w-fit items-center gap-1 rounded-full bg-black/5 px-2.5 py-1 text-[10px] text-[#667781]">
+                            <Volume2 className="size-3" aria-hidden="true" /> respuesta de voz —
+                            silenciada en este demo (el sistema real envía audio TTS)
                           </div>
                         ) : (
                           <div className="mt-1">
-                            <div className="mb-0.5 text-[10px] text-stone-500">🔊 respuesta de voz (TTS)</div>
+                            <div className="mb-0.5 inline-flex items-center gap-1 text-[10px] text-[#667781]">
+                              <Volume2 className="size-3" aria-hidden="true" /> respuesta de voz (TTS)
+                            </div>
                             <audio controls src={m.audioReplyUrl} className="h-8 w-48" />
                           </div>
                         ))}
-                      <div className="mt-0.5 text-right text-[9px] text-stone-400">
+                      <div className="mt-0.5 flex items-center justify-end gap-0.5 text-right font-mono text-[9px] tabular-nums text-[#667781]">
                         {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        {m.direction === 'outbound' && ' ✓✓'}
+                        {m.direction === 'outbound' && (
+                          <CheckCheck className="size-3" aria-hidden="true" />
+                        )}
                       </div>
                     </div>
                   </div>
                 ))
               )}
             </div>
-            <div className="space-y-2 bg-stone-100 px-3 py-2.5">
+            <div className="space-y-2 bg-[#f0f2f5] px-3 py-2.5">
               <div className="flex flex-wrap gap-1">
                 {SUGGESTED_QUESTIONS.map((q) => (
                   <button
@@ -270,15 +287,15 @@ export default function Simulator() {
               <div className="flex gap-1 text-xs">
                 <button
                   onClick={() => setMode('text')}
-                  className={`rounded-full px-3 py-1 font-medium ${mode === 'text' ? 'bg-emerald-700 text-white' : 'bg-white text-stone-600'}`}
+                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1 font-medium ${mode === 'text' ? 'bg-emerald-700 text-white' : 'bg-white text-[#54656f]'}`}
                 >
-                  💬 Texto
+                  <MessagesSquare className="size-3.5" aria-hidden="true" /> Texto
                 </button>
                 <button
                   onClick={() => setMode('voice')}
-                  className={`rounded-full px-3 py-1 font-medium ${mode === 'voice' ? 'bg-emerald-700 text-white' : 'bg-white text-stone-600'}`}
+                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1 font-medium ${mode === 'voice' ? 'bg-emerald-700 text-white' : 'bg-white text-[#54656f]'}`}
                 >
-                  🎤 Nota de voz
+                  <Mic className="size-3.5" aria-hidden="true" /> Nota de voz
                 </button>
               </div>
               <div className="flex gap-2">
@@ -297,27 +314,28 @@ export default function Simulator() {
                       ? 'Escribe lo que el trabajador DIRÍA en su nota de voz…'
                       : 'Escribe un mensaje…'
                   }
-                  className="flex-1 resize-none rounded-full border border-stone-300 bg-white px-4 py-2 text-sm focus:outline-none"
+                  className="flex-1 resize-none rounded-full border border-[#d1d7db] bg-white px-4 py-2 text-sm text-[#111b21] focus:outline-none"
                 />
                 <button
                   onClick={() => void send()}
                   disabled={sending || !text.trim()}
-                  className="h-10 w-10 shrink-0 self-end rounded-full bg-emerald-700 text-white disabled:bg-stone-300"
+                  aria-label="Send message"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center self-end rounded-full bg-emerald-700 text-white disabled:opacity-50"
                 >
-                  ➤
+                  <Send className="size-4" aria-hidden="true" />
                 </button>
               </div>
-              <p className="text-[10px] text-stone-400">
-                Tap a question above, or try: “¿me puedes subir el sueldo?” (refusal) · “hola” ·
-                with a pending lesson reply “2” · consent “ALTA” / “BAJA” · with a pending
-                agreement reply “ACEPTO”.
+              <p className="text-[10px] text-[#667781]">
+                Tap a question above, or try: "¿me puedes subir el sueldo?" (refusal) · "hola" · with
+                a pending lesson reply "2" · consent "ALTA" / "BAJA" · with a pending agreement reply
+                "ACEPTO".
               </p>
             </div>
           </div>
           {nonSpanishHint && (
-            <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              The worker assistant operates in Spanish — it just replied with a short
-              Spanish-only nudge. Try a suggested question below the chat (or type in Spanish).
+            <p className="badge-warning mt-2 rounded-md px-3 py-2 text-xs">
+              The worker assistant operates in Spanish — it just replied with a short Spanish-only
+              nudge. Try a suggested question below the chat (or type in Spanish).
             </p>
           )}
         </div>

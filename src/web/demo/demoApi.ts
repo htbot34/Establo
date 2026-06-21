@@ -79,7 +79,7 @@ const dateOf = (v: string | null | undefined) => (v ? new Date(v) : null);
 const SILENCE_URL = './demo-silence.mp3';
 
 // Optional pre-rendered demo audio (scripts/render-demo-audio.ts writes this
-// when an OPENAI_API_KEY is present at build time). Empty by default → the demo
+// when an OPENAI_API_KEY is present at build time). Empty by default; the demo
 // serves the silent placeholder, exactly as before. Real entries are relative
 // paths like "./demo-audio/module-<id>.ogg".
 const audioManifest = audioManifestJson as Record<string, string>;
@@ -124,7 +124,7 @@ function scoreChunk(qTokens: string[], chunk: Row): number {
   }
   // Heading words are the strongest relevance signal (they become the
   // citation). When a query token reaches a heading word only through a
-  // shared 4-char stem ("lavar" → "Lavado") the loop above misses it, so
+  // shared 4-char stem ("lavar" becomes "Lavado") the loop above misses it, so
   // credit each such heading word — but never double-count tokens the text
   // already matched, which would let an incidental heading word (e.g.
   // "Equipo de protección") outrank the chunk that answers the question.
@@ -418,7 +418,7 @@ function handleInbound(workerId: string, kind: 'text' | 'voice', text: string): 
   }
   sendDisclosureIfNeeded();
 
-  // ── Cow care agreement: deliver if queued; ACEPTO signs; else nudge → escalate ──
+  // ── Cow care agreement: deliver if queued; ACEPTO signs; else nudge then escalate ──
   let agreementJustDelivered = false;
   if (worker.pendingAgreementId && !worker.pendingAgreementSentAt) {
     const agreement = s.agreements.find((a) => a.id === worker.pendingAgreementId) ?? activeAgreement();

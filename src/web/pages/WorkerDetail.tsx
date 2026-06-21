@@ -1,5 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import {
+  ArrowLeft,
+  BookOpen,
+  Check,
+  CircleAlert,
+  CircleCheck,
+  CirclePause,
+  FileText,
+  Flag,
+  GraduationCap,
+  Hourglass,
+  Mail,
+  MessagesSquare,
+  PenLine,
+  type LucideIcon,
+} from 'lucide-react';
 import { api, fmtDate, fmtDateTime, IS_DEMO, timeAgo } from '../api';
 import { roleApplies, WORKER_ROLES, WORKER_ROLE_LABELS } from '../../server/services/roles';
 import {
@@ -89,12 +105,12 @@ interface TrackModules {
   modules: Array<{ appliesToRoles: string[] | null }>;
 }
 
-const EVENT_STYLE: Record<string, { label: string; color: string; icon: string }> = {
-  qa_interaction: { label: 'Q&A', color: 'blue', icon: '💬' },
-  module_delivered: { label: 'Module delivered', color: 'stone', icon: '📚' },
-  check_passed: { label: 'Check passed', color: 'green', icon: '✅' },
-  check_failed: { label: 'Check missed', color: 'amber', icon: '✳️' },
-  escalation: { label: 'Escalated', color: 'red', icon: '🚩' },
+const EVENT_STYLE: Record<string, { label: string; color: string; icon: LucideIcon }> = {
+  qa_interaction: { label: 'Q&A', color: 'blue', icon: MessagesSquare },
+  module_delivered: { label: 'Module delivered', color: 'stone', icon: BookOpen },
+  check_passed: { label: 'Check passed', color: 'green', icon: CircleCheck },
+  check_failed: { label: 'Check missed', color: 'amber', icon: CircleAlert },
+  escalation: { label: 'Escalated', color: 'red', icon: Flag },
 };
 
 const FARM_LABELS: Record<string, string> = {
@@ -226,11 +242,20 @@ export default function WorkerDetail() {
   return (
     <div>
       <div className="mb-2 text-xs">
-        <Link to="/workers" className="text-green-800 hover:underline">← Workers</Link>
+        <Link to="/workers" className="inline-flex items-center gap-1 text-primary hover:underline">
+          <ArrowLeft className="size-3.5" aria-hidden="true" />
+          Workers
+        </Link>
       </div>
       <PageHeader
         title={data.name}
-        subtitle={`${data.phoneE164} · hired ${fmtDate(data.hiredAt)} · last active ${timeAgo(data.lastInboundAt)}`}
+        subtitle={
+          <span>
+            <span className="font-mono">{data.phoneE164}</span> · hired{' '}
+            <span className="font-mono tabular-nums">{fmtDate(data.hiredAt)}</span> · last active{' '}
+            {timeAgo(data.lastInboundAt)}
+          </span>
+        }
         actions={
           <>
             {!IS_DEMO && (
@@ -244,7 +269,7 @@ export default function WorkerDetail() {
       />
       <ErrorNote error={error} />
       {note && (
-        <div className="mb-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+        <div className="badge-success mb-3 rounded-md border border-success/25 px-3 py-2 text-sm">
           {note}
         </div>
       )}
@@ -252,8 +277,8 @@ export default function WorkerDetail() {
       {/* ── Job role (drives role-scoped onboarding) ── */}
       <Card className="mb-4 flex flex-wrap items-center gap-3 p-4">
         <div>
-          <h2 className="text-sm font-semibold text-stone-700">Job role</h2>
-          <p className="text-xs text-stone-400">
+          <h2 className="text-sm font-medium text-foreground">Job role</h2>
+          <p className="text-xs text-muted-foreground">
             Decides which role-specific lessons this worker receives when enrolled.
           </p>
         </div>
@@ -273,12 +298,12 @@ export default function WorkerDetail() {
       <Card className="mb-4 p-5">
         <div className="grid gap-5 sm:grid-cols-2">
           <div>
-            <h2 className="mb-1.5 text-sm font-semibold text-stone-700">WhatsApp consent</h2>
+            <h2 className="mb-1.5 text-sm font-medium text-foreground">WhatsApp consent</h2>
             <div className="flex items-center gap-2 text-sm">
               {consentBadge(consent)}
               {data.consentedAt && (
-                <span className="text-xs text-stone-400">
-                  {fmtDate(data.consentedAt)}
+                <span className="text-xs text-muted-foreground">
+                  <span className="font-mono tabular-nums">{fmtDate(data.consentedAt)}</span>
                   {data.consentMethod ? ` · ${data.consentMethod.replace(/_/g, ' ')}` : ''}
                   {data.consentAttestedBy ? ` · attested by ${data.consentAttestedBy}` : ''}
                 </span>
@@ -286,40 +311,48 @@ export default function WorkerDetail() {
             </div>
             {consent === 'pending' && (
               <div className="mt-2 space-y-2">
-                <p className="text-xs text-stone-500">
+                <p className="text-xs text-muted-foreground">
                   Establo sends nothing until this worker opts in: they text the number (ALTA or
                   any first message), or you collect the printed consent form and attest it here.
                 </p>
                 <Button variant="secondary" onClick={() => setAttesting('consent')}>
-                  ✍️ Consent collected on paper
+                  <PenLine aria-hidden="true" /> Consent collected on paper
                 </Button>
               </div>
             )}
             {consent === 'opted_out' && (
-              <p className="mt-2 text-xs text-red-700">
+              <p className="mt-2 text-xs text-destructive">
                 This worker texted BAJA. All sends are blocked until they text ALTA themselves —
                 this cannot be overridden from the dashboard.
               </p>
             )}
           </div>
           <div>
-            <h2 className="mb-1.5 text-sm font-semibold text-stone-700">Cow care agreement</h2>
+            <h2 className="mb-1.5 text-sm font-medium text-foreground">Cow care agreement</h2>
             {agr?.signed ? (
-              <div className="text-sm text-stone-700">
-                ✅ Signed v{agr.version} on {fmtDate(agr.signedAt)} via {agr.method}
+              <div className="flex items-center gap-1.5 text-sm text-foreground">
+                <CircleCheck className="size-4 text-success" aria-hidden="true" />
+                <span>
+                  Signed <span className="font-mono">v{agr.version}</span> on{' '}
+                  <span className="font-mono tabular-nums">{fmtDate(agr.signedAt)}</span> via{' '}
+                  {agr.method}
+                </span>
                 {agr.renewalDue && (
-                  <span className="ml-2">
+                  <span className="ml-1">
                     <Badge color="amber">annual renewal due</Badge>
                   </span>
                 )}
               </div>
             ) : agr?.pendingSince ? (
-              <div className="text-sm text-stone-600">
-                ⏳ Sent {fmtDateTime(agr.pendingSince)} — waiting for the worker to reply{' '}
-                <strong>ACEPTO</strong>
+              <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Hourglass className="size-4" aria-hidden="true" />
+                <span>
+                  Sent <span className="font-mono tabular-nums">{fmtDateTime(agr.pendingSince)}</span>{' '}
+                  — waiting for the worker to reply <strong>ACEPTO</strong>
+                </span>
               </div>
             ) : (
-              <div className="text-sm text-stone-400">Not signed</div>
+              <div className="text-sm text-muted-foreground">Not signed</div>
             )}
             <div className="mt-2 flex flex-wrap gap-2">
               <Button
@@ -328,13 +361,14 @@ export default function WorkerDetail() {
                 disabled={consent !== 'opted_in'}
                 title={consent !== 'opted_in' ? 'Worker must opt in first' : undefined}
               >
-                {agr?.signed ? '📨 Send for re-signature' : '📨 Send via WhatsApp'}
+                <Mail aria-hidden="true" />
+                {agr?.signed ? 'Send for re-signature' : 'Send via WhatsApp'}
               </Button>
               <Button variant="secondary" onClick={() => setAttesting('agreement')}>
-                ✍️ Mark signed on paper
+                <PenLine aria-hidden="true" /> Mark signed on paper
               </Button>
             </div>
-            <p className="mt-1.5 text-xs text-stone-400">
+            <p className="mt-1.5 text-xs text-muted-foreground">
               FARM Animal Care v5 expects a signed cow care agreement for every employee with
               animal care responsibilities, renewed annually.
             </p>
@@ -347,32 +381,35 @@ export default function WorkerDetail() {
           {data.enrollments.map((enr) => (
             <Card key={enr.id} className="p-5">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <span className="font-medium text-stone-800">{enr.trackName}</span>
-                  <span className="ml-2">{statusBadge(enr.status)}</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium text-foreground">{enr.trackName}</span>
+                  {statusBadge(enr.status)}
                   {enr.status === 'completed' &&
                     (enr.signedOffAt ? (
-                      <span className="ml-2 text-xs text-green-700">
-                        ✓ Confirmed by {enr.signedOffName} ({enr.signedOffRole}) on{' '}
-                        {fmtDate(enr.signedOffAt)}
+                      <span className="inline-flex items-center gap-1 text-xs text-success">
+                        <Check className="size-3.5" aria-hidden="true" />
+                        Confirmed by {enr.signedOffName} ({enr.signedOffRole}) on{' '}
+                        <span className="font-mono tabular-nums">{fmtDate(enr.signedOffAt)}</span>
                       </span>
                     ) : (
-                      <span className="ml-2">
-                        <Badge color="amber">completion not confirmed</Badge>
-                      </span>
+                      <Badge color="amber">completion not confirmed</Badge>
                     ))}
                 </div>
-                <div className="flex items-center gap-3 text-xs text-stone-400">
-                  <span>started {fmtDate(enr.startedAt)}</span>
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  <span>
+                    started{' '}
+                    <span className="font-mono tabular-nums">{fmtDate(enr.startedAt)}</span>
+                  </span>
                   {enr.status === 'completed' && !enr.signedOffAt && (
                     <Button onClick={() => void signOff(enr.id)}>Confirm completion</Button>
                   )}
                   {enr.certificateUrl && (
                     <a
                       href={`${enr.certificateUrl}?download`}
-                      className="font-medium text-green-800 hover:underline"
+                      className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
                     >
-                      🎓 Certificate PDF
+                      <GraduationCap className="size-3.5" aria-hidden="true" />
+                      Certificate PDF
                     </a>
                   )}
                 </div>
@@ -380,22 +417,32 @@ export default function WorkerDetail() {
               <ol className="space-y-1.5">
                 {enr.deliveries.map((d) => (
                   <li key={d.id} className="flex items-center gap-3 text-sm">
-                    <span className="w-5 text-right text-xs text-stone-400">{d.orderIndex + 1}.</span>
-                    <span className="flex-1 text-stone-700">{d.moduleTitle}</span>
-                    {d.checkPassed !== null && (
-                      <span className="text-xs">{d.checkPassed ? '✅ passed' : '✳️ missed'}</span>
-                    )}
+                    <span className="w-5 text-right font-mono text-xs tabular-nums text-muted-foreground">
+                      {d.orderIndex + 1}.
+                    </span>
+                    <span className="flex-1 text-foreground">{d.moduleTitle}</span>
+                    {d.checkPassed !== null &&
+                      (d.checkPassed ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-success">
+                          <CircleCheck className="size-3.5" aria-hidden="true" /> passed
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs text-warning">
+                          <CircleAlert className="size-3.5" aria-hidden="true" /> missed
+                        </span>
+                      ))}
                     {statusBadge(d.status)}
-                    <span className="w-32 text-right text-xs text-stone-400">
+                    <span className="w-36 text-right font-mono text-xs tabular-nums text-muted-foreground">
                       {d.sentAt ? fmtDateTime(d.sentAt) : `due ${fmtDateTime(d.scheduledFor)}`}
                     </span>
                   </li>
                 ))}
               </ol>
               {enr.status === 'active' && consent === 'pending' && (
-                <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  ⏸ Awaiting opt-in — lessons are scheduled but nothing is sent until this worker
-                  opts in on WhatsApp.
+                <p className="badge-warning mt-3 flex items-center gap-1.5 rounded-md px-3 py-2 text-xs">
+                  <CirclePause className="size-3.5 shrink-0" aria-hidden="true" />
+                  Awaiting opt-in — lessons are scheduled but nothing is sent until this worker opts
+                  in on WhatsApp.
                 </p>
               )}
             </Card>
@@ -404,21 +451,23 @@ export default function WorkerDetail() {
       )}
 
       <Card>
-        <div className="border-b border-stone-100 px-5 py-3">
-          <h2 className="text-sm font-semibold text-stone-700">
-            Training transcript <span className="font-normal text-stone-400">— every logged event, newest first</span>
+        <div className="border-b border-border px-5 py-3">
+          <h2 className="text-sm font-medium text-foreground">
+            Training transcript{' '}
+            <span className="font-normal text-muted-foreground">— every logged event, newest first</span>
           </h2>
         </div>
         {data.events.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-stone-400">No training events yet.</p>
+          <p className="px-5 py-6 text-sm text-muted-foreground">No training events yet.</p>
         ) : (
-          <ul className="divide-y divide-stone-100">
+          <ul className="divide-y divide-border">
             {data.events.map((ev) => {
               const style = EVENT_STYLE[ev.eventType] ?? EVENT_STYLE.qa_interaction;
+              const Icon = style.icon;
               return (
                 <li key={ev.id} className="px-5 py-3">
-                  <div className="flex items-center gap-2 text-xs text-stone-400">
-                    <span>{style.icon}</span>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <Icon className="size-3.5 shrink-0" aria-hidden="true" />
                     <Badge color={style.color}>{style.label}</Badge>
                     <Badge>{ev.topic}</Badge>
                     {ev.farmTopic && FARM_LABELS[ev.farmTopic] && (
@@ -427,16 +476,19 @@ export default function WorkerDetail() {
                     {ev.confidence && ev.confidence !== 'grounded' && (
                       <Badge color="amber">{ev.confidence}</Badge>
                     )}
-                    <span className="ml-auto">{fmtDateTime(ev.occurredAt)}</span>
+                    <span className="ml-auto font-mono tabular-nums">{fmtDateTime(ev.occurredAt)}</span>
                   </div>
                   {ev.questionText && (
-                    <p className="mt-1.5 text-sm font-medium text-stone-800">“{ev.questionText}”</p>
+                    <p className="mt-1.5 text-sm font-medium text-foreground">"{ev.questionText}"</p>
                   )}
                   {ev.answerText && (
-                    <p className="mt-1 whitespace-pre-wrap text-sm text-stone-600">{ev.answerText}</p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{ev.answerText}</p>
                   )}
                   {ev.sourceDocumentTitle && (
-                    <p className="mt-1 text-xs text-stone-400">📄 {ev.sourceDocumentTitle}</p>
+                    <p className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
+                      <FileText className="size-3.5" aria-hidden="true" />
+                      {ev.sourceDocumentTitle}
+                    </p>
                   )}
                 </li>
               );
@@ -458,7 +510,7 @@ export default function WorkerDetail() {
             ))}
           </Select>
           {trackId && trackPreview && (
-            <p className="mt-3 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-900">
+            <p className="mt-3 rounded-md bg-navactive-bg px-3 py-2 text-sm text-navactive-fg">
               This worker{' '}
               {data.jobRole ? (
                 <>
@@ -468,7 +520,7 @@ export default function WorkerDetail() {
                 '(unassigned)'
               )}{' '}
               will receive{' '}
-              <strong>
+              <strong className="font-mono tabular-nums">
                 {trackPreview.applicable} of {trackPreview.total}
               </strong>{' '}
               lessons based on their role.
@@ -476,7 +528,7 @@ export default function WorkerDetail() {
                 ' No lessons in this track apply to this role — assign a different role or pick another track.'}
             </p>
           )}
-          <p className="mt-2 text-xs text-stone-400">
+          <p className="mt-2 text-xs text-muted-foreground">
             Modules are scheduled from today using each module's day offset, and sent by the
             scheduler at the configured local hour.
             {consent !== 'opted_in' &&
@@ -504,7 +556,7 @@ export default function WorkerDetail() {
           onClose={() => setAttesting(null)}
         >
           <ErrorNote error={error} />
-          <p className="mb-3 text-sm text-stone-600">
+          <p className="mb-3 text-sm text-muted-foreground">
             {attesting === 'consent'
               ? `Confirm that ${data.name} signed the printed WhatsApp-consent form. Keep the paper form in their file.`
               : `Confirm that ${data.name} signed the cow care agreement on paper. Keep the signed copy in their file.`}

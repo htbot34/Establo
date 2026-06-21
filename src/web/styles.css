@@ -2,9 +2,151 @@
 @tailwind components;
 @tailwind utilities;
 
-html {
-  @apply antialiased;
+/*
+ * Establo design tokens — operational / institutional.
+ * Cool ink/slate neutral ramp + evergreen accent. shadcn-compatible
+ * variable set, expressed as HSL channels so /opacity modifiers work.
+ */
+@layer base {
+  :root {
+    --background: 210 21.4% 94.5%;
+    --foreground: 210 16.7% 9.4%;
+    --card: 0 0% 100%;
+    --card-foreground: 210 16.7% 9.4%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 16.7% 9.4%;
+    --primary: 155 50% 23.5%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 100%;
+    --secondary-foreground: 212 11.5% 25.7%;
+    --muted: 210 20% 92.2%;
+    --muted-foreground: 214 8.9% 46.1%;
+    --accent: 210 17.4% 91%;
+    --accent-foreground: 210 16.7% 9.4%;
+    --destructive: 4 76.5% 40%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 212 13.7% 81.4%;
+    --input: 212 13.7% 81.4%;
+    --ring: 155 50% 23.5%;
+
+    /* evergreen ramp */
+    --ever-50: 142 20% 92.2%;
+    --ever-100: 153 25% 81.2%;
+    --ever-600: 155 50% 23.5%;
+    --ever-700: 155 51% 19.2%;
+    --ever-900: 156 51.7% 11.4%;
+
+    /* semantic solids (text / strokes) */
+    --success: 151 60.5% 29.8%;
+    --warning: 26 90.5% 37.1%;
+    --info: 210 43.6% 29.2%;
+
+    /* active nav pill */
+    --navactive-bg: 142 20% 92.2%;
+    --navactive-fg: 156 51.7% 11.4%;
+
+    /* badge tints (bg + fg) */
+    --bsucc-bg: 148 28.9% 91.2%;
+    --bsucc-fg: 156 61.2% 20.2%;
+    --bwarn-bg: 38 65.2% 91%;
+    --bwarn-fg: 23 82.5% 31.4%;
+    --bdang-bg: 3 90.5% 95.9%;
+    --bdang-fg: 4 76.5% 40%;
+    --bneut-bg: 210 20% 92.2%;
+    --bneut-fg: 212 11.5% 25.7%;
+    --binfo-bg: 210 37.5% 93.7%;
+    --binfo-fg: 210 43.6% 29.2%;
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 210 17.6% 6.7%;
+    --foreground: 210 13.6% 91.4%;
+    --card: 210 16.7% 9.4%;
+    --card-foreground: 210 13.6% 91.4%;
+    --popover: 210 16.7% 9.4%;
+    --popover-foreground: 210 13.6% 91.4%;
+    --primary: 152 38% 39.2%;
+    --primary-foreground: 152 44.2% 8.4%;
+    --secondary: 213 17.5% 12.4%;
+    --secondary-foreground: 212 13.1% 80.6%;
+    --muted: 210 16.7% 16.5%;
+    --muted-foreground: 212 10.4% 64.1%;
+    --accent: 212 17.8% 14.3%;
+    --accent-foreground: 210 13.6% 91.4%;
+    --destructive: 5 60.7% 46.9%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 212 13.4% 19%;
+    --input: 212 13.4% 19%;
+    --ring: 152 38% 39.2%;
+
+    --ever-50: 159 41.3% 14.7%;
+    --ever-100: 156 41.7% 18.8%;
+    --ever-600: 152 38% 39.2%;
+    --ever-700: 152 29.4% 50%;
+    --ever-900: 152 39.1% 82%;
+
+    --success: 151 37.7% 47.8%;
+    --warning: 35 69.1% 51.8%;
+    --info: 211 51.1% 65.5%;
+
+    --navactive-bg: 159 41.3% 14.7%;
+    --navactive-fg: 152 39.1% 82%;
+
+    --bsucc-bg: 159 41.3% 14.7%;
+    --bsucc-fg: 152 39.1% 82%;
+    --bwarn-bg: 39 52.6% 14.9%;
+    --bwarn-fg: 40 74% 80.4%;
+    --bdang-bg: 5 43.2% 15.9%;
+    --bdang-fg: 7 76.8% 81.4%;
+    --bneut-bg: 210 16.7% 16.5%;
+    --bneut-fg: 210 13% 78.8%;
+    --binfo-bg: 213 45% 15.7%;
+    --binfo-fg: 212 52.8% 79.2%;
+  }
 }
-body {
-  @apply bg-stone-100 text-stone-900;
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  html {
+    @apply antialiased;
+  }
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+}
+
+@layer utilities {
+  /* Tabular figures for every number, ID, phone, timestamp. */
+  .tnum {
+    font-feature-settings: 'tnum';
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  .badge-success {
+    background-color: hsl(var(--bsucc-bg));
+    color: hsl(var(--bsucc-fg));
+  }
+  .badge-warning {
+    background-color: hsl(var(--bwarn-bg));
+    color: hsl(var(--bwarn-fg));
+  }
+  .badge-danger {
+    background-color: hsl(var(--bdang-bg));
+    color: hsl(var(--bdang-fg));
+  }
+  .badge-neutral {
+    background-color: hsl(var(--bneut-bg));
+    color: hsl(var(--bneut-fg));
+  }
+  .badge-info {
+    background-color: hsl(var(--binfo-bg));
+    color: hsl(var(--binfo-fg));
+  }
 }

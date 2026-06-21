@@ -1,4 +1,13 @@
-import { useEffect, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
+import { Loader2 } from 'lucide-react';
+import { cn } from './lib/utils';
+import { ButtonBase } from './ui/button';
+import { CardRoot } from './ui/card';
+import { BadgeBase } from './ui/badge';
+import { InputBase } from './ui/input';
+import { TextareaBase } from './ui/textarea';
+import { LabelBase } from './ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 
 export function PageHeader({
   title,
@@ -6,14 +15,14 @@ export function PageHeader({
   actions,
 }: {
   title: string;
-  subtitle?: string;
+  subtitle?: ReactNode;
   actions?: ReactNode;
 }) {
   return (
     <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm text-stone-500">{subtitle}</p>}
+        <h1 className="text-3xl font-medium tracking-tight text-foreground">{title}</h1>
+        {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </div>
@@ -21,81 +30,59 @@ export function PageHeader({
 }
 
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return (
-    <div className={`rounded-xl border border-stone-200 bg-white shadow-sm ${className}`}>
-      {children}
-    </div>
-  );
+  return <CardRoot className={className}>{children}</CardRoot>;
 }
 
 type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
 };
 
+const BUTTON_VARIANT = {
+  primary: 'default',
+  secondary: 'secondary',
+  danger: 'destructive',
+  ghost: 'ghost',
+} as const;
+
 export function Button({ variant = 'primary', className = '', ...props }: ButtonProps) {
-  const styles: Record<string, string> = {
-    primary:
-      'bg-green-800 text-white hover:bg-green-900 disabled:bg-stone-300 disabled:text-stone-500',
-    secondary:
-      'border border-stone-300 bg-white text-stone-700 hover:bg-stone-50 disabled:text-stone-400',
-    danger: 'bg-red-600 text-white hover:bg-red-700 disabled:bg-stone-300',
-    ghost: 'text-stone-600 hover:bg-stone-100 disabled:text-stone-400',
-  };
-  return (
-    <button
-      {...props}
-      className={`rounded-lg px-3.5 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed ${styles[variant]} ${className}`}
-    />
-  );
+  return <ButtonBase variant={BUTTON_VARIANT[variant]} className={className} {...props} />;
 }
 
 export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      {...props}
-      className={`w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm focus:border-green-700 focus:outline-none focus:ring-1 focus:ring-green-700 ${props.className ?? ''}`}
-    />
-  );
+  return <InputBase {...props} />;
 }
 
 export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return (
-    <textarea
-      {...props}
-      className={`w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm focus:border-green-700 focus:outline-none focus:ring-1 focus:ring-green-700 ${props.className ?? ''}`}
-    />
-  );
+  return <TextareaBase {...props} />;
 }
 
 export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select
       {...props}
-      className={`w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm focus:border-green-700 focus:outline-none ${props.className ?? ''}`}
+      className={cn(
+        'flex h-9 w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground shadow-sm transition-colors focus-visible:border-ring focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
+        props.className,
+      )}
     />
   );
 }
 
 export function Label({ children }: { children: ReactNode }) {
-  return <label className="mb-1 block text-xs font-medium text-stone-600">{children}</label>;
+  return <LabelBase className="mb-1 block">{children}</LabelBase>;
 }
 
-const BADGE_COLORS: Record<string, string> = {
-  green: 'bg-green-100 text-green-800',
-  amber: 'bg-amber-100 text-amber-800',
-  red: 'bg-red-100 text-red-700',
-  stone: 'bg-stone-200 text-stone-700',
-  blue: 'bg-sky-100 text-sky-800',
+/** Maps the legacy color names to the token-driven badge variants. */
+const BADGE_VARIANT: Record<string, 'success' | 'warning' | 'danger' | 'neutral' | 'info'> = {
+  green: 'success',
+  amber: 'warning',
+  red: 'danger',
+  stone: 'neutral',
+  blue: 'info',
 };
 
 export function Badge({ color = 'stone', children }: { color?: string; children: ReactNode }) {
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${BADGE_COLORS[color] ?? BADGE_COLORS.stone}`}
-    >
-      {children}
-    </span>
-  );
+  return <BadgeBase variant={BADGE_VARIANT[color] ?? 'neutral'}>{children}</BadgeBase>;
 }
 
 export function statusBadge(status: string): ReactNode {
@@ -131,11 +118,8 @@ export function consentBadge(status: string | null | undefined): ReactNode {
 
 export function Spinner({ label }: { label?: string }) {
   return (
-    <div className="flex items-center justify-center gap-2 p-8 text-sm text-stone-500">
-      <svg className="h-5 w-5 animate-spin text-green-800" viewBox="0 0 24 24" fill="none">
-        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-      </svg>
+    <div className="flex items-center justify-center gap-2 p-8 text-sm text-muted-foreground">
+      <Loader2 className="size-5 animate-spin text-primary" aria-hidden="true" />
       {label ?? 'Loading…'}
     </div>
   );
@@ -144,12 +128,16 @@ export function Spinner({ label }: { label?: string }) {
 export function EmptyState({ title, hint }: { title: string; hint?: string }) {
   return (
     <div className="p-10 text-center">
-      <p className="text-sm font-medium text-stone-600">{title}</p>
-      {hint && <p className="mt-1 text-xs text-stone-400">{hint}</p>}
+      <p className="text-sm font-medium text-secondary-foreground">{title}</p>
+      {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
 }
 
+/**
+ * Modal keeps its original prop API but is now a thin wrapper over the shadcn
+ * Dialog (Radix): Escape-to-close and click-outside both resolve to onClose.
+ */
 export function Modal({
   title,
   onClose,
@@ -161,41 +149,39 @@ export function Modal({
   children: ReactNode;
   wide?: boolean;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-stone-900/40 p-4 pt-16"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
     >
-      <div
-        className={`w-full ${wide ? 'max-w-3xl' : 'max-w-lg'} rounded-xl bg-white p-5 shadow-xl`}
+      <DialogContent
+        aria-describedby={undefined}
+        className={cn(
+          'max-h-[85vh] overflow-y-auto',
+          wide ? 'max-w-3xl' : 'max-w-lg',
+        )}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">{title}</h2>
-          <button onClick={onClose} className="rounded p-1 text-stone-400 hover:bg-stone-100">
-            ✕
-          </button>
-        </div>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
         {children}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 export function ErrorNote({ error }: { error: string | null }) {
   if (!error) return null;
   return (
-    <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+    <div className="mb-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
       {error}
     </div>
   );
 }
 
-/** Tiny inline SVG sparkline for the overview page. */
+/** Tiny inline SVG sparkline for the overview page (evergreen, theme-aware). */
 export function Sparkline({ data }: { data: Array<{ date: string; count: number }> }) {
   const W = 560;
   const H = 64;
@@ -205,20 +191,21 @@ export function Sparkline({ data }: { data: Array<{ date: string; count: number 
     .map((d, i) => `${(i * step).toFixed(1)},${(H - 6 - (d.count / max) * (H - 14)).toFixed(1)}`)
     .join(' ');
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="h-16 w-full" preserveAspectRatio="none">
+    <svg viewBox={`0 0 ${W} ${H}`} className="h-16 w-full text-ever-600" preserveAspectRatio="none">
       <polyline
         points={`0,${H} ${points} ${W},${H}`}
-        fill="rgb(22 101 52 / 0.08)"
+        className="text-ever-600 opacity-[0.10]"
+        fill="currentColor"
         stroke="none"
       />
-      <polyline points={points} fill="none" stroke="rgb(22 101 52)" strokeWidth="2" />
+      <polyline points={points} fill="none" stroke="currentColor" strokeWidth="2" />
       {data.map((d, i) => (
         <circle
           key={d.date}
           cx={i * step}
           cy={H - 6 - (d.count / max) * (H - 14)}
           r="2.4"
-          fill="rgb(22 101 52)"
+          fill="currentColor"
         >
           <title>{`${d.date}: ${d.count} events`}</title>
         </circle>

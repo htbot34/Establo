@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, IS_DEMO } from '../api';
 import { useAuth } from '../auth';
 import { Button, ErrorNote, Input, Label } from '../components';
+import { Logomark } from '../brand/Logomark';
 
 export default function Login() {
   const [tab, setTab] = useState<'login' | 'setup'>('login');
@@ -39,17 +40,17 @@ export default function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-stone-100 px-4">
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm">
-        <div className="mb-6 text-center">
-          <div className="text-4xl">🐄</div>
-          <h1 className="mt-2 text-2xl font-bold tracking-tight text-green-900">Establo</h1>
-          <p className="mt-1 text-sm text-stone-500">
+        <div className="mb-6 flex flex-col items-center text-center">
+          <Logomark className="size-11 text-foreground" title="Establo" />
+          <h1 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">Establo</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             WhatsApp training & SOP assistance for your dairy
           </p>
         </div>
-        <div className="rounded-xl border border-stone-200 bg-white p-6 shadow-sm">
-          <div className="mb-5 grid grid-cols-2 gap-1 rounded-lg bg-stone-100 p-1 text-sm font-medium">
+        <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
+          <div className="mb-5 grid grid-cols-2 gap-1 rounded-md bg-muted p-1 text-sm font-medium">
             {(['login', 'setup'] as const).map((t) => (
               <button
                 key={t}
@@ -57,7 +58,9 @@ export default function Login() {
                   setTab(t);
                   setError(null);
                 }}
-                className={`rounded-md py-1.5 ${tab === t ? 'bg-white shadow-sm' : 'text-stone-500'}`}
+                className={`rounded-sm py-1.5 transition-colors ${
+                  tab === t ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground'
+                }`}
               >
                 {t === 'login' ? 'Sign in' : 'Set up a dairy'}
               </button>
@@ -101,8 +104,8 @@ export default function Login() {
             </Button>
           </form>
           {tab === 'login' && (
-            <p className="mt-4 text-center text-xs text-stone-400">
-              Demo: demo@establo.app / establo-demo-2026
+            <p className="mt-4 text-center text-xs text-muted-foreground">
+              Demo: <span className="font-mono">demo@establo.app / establo-demo-2026</span>
             </p>
           )}
         </div>

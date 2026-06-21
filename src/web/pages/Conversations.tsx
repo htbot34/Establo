@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ClipboardList, Mic, Volume2 } from 'lucide-react';
+import { type ColumnDef } from '@tanstack/react-table';
 import { api, fmtDateTime, IS_DEMO, timeAgo } from '../api';
 import { Badge, Button, Card, EmptyState, PageHeader, Spinner, statusBadge } from '../components';
+import { DataTable } from '../ui/data-table';
 import { videoFromText } from '../../server/services/video';
 
 interface Conv {
@@ -55,10 +58,65 @@ export default function Conversations() {
     setMsgs(await api<Msg[]>(`/api/conversations/${conv.id}/messages`));
   }
 
-  async function resolve(id: string) {
-    await api(`/api/escalations/${id}/resolve`, { method: 'POST' });
-    await loadEscalations();
-  }
+  const resolve = useCallback(
+    async (id: string) => {
+      await api(`/api/escalations/${id}/resolve`, { method: 'POST' });
+      await loadEscalations();
+    },
+    [loadEscalations],
+  );
+
+  const escalationColumns = useMemo<ColumnDef<Escalation>[]>(
+    () => [
+      {
+        accessorKey: 'workerName',
+        header: 'Worker',
+        cell: ({ row }) => (
+          <span className="font-medium text-foreground">{row.original.workerName}</span>
+        ),
+      },
+      {
+        accessorKey: 'questionText',
+        header: 'Question',
+        enableSorting: false,
+        cell: ({ row }) => (
+          <span className="block max-w-md truncate text-foreground" title={row.original.questionText}>
+            "{row.original.questionText}"
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'reason',
+        header: 'Reason',
+        cell: ({ row }) => <Badge color="stone">{row.original.reason}</Badge>,
+      },
+      {
+        accessorKey: 'createdAt',
+        header: 'Raised',
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">{timeAgo(row.original.createdAt)}</span>
+        ),
+      },
+      {
+        accessorKey: 'status',
+        header: 'Status',
+        cell: ({ row }) => statusBadge(row.original.status),
+      },
+      {
+        id: 'action',
+        header: '',
+        enableSorting: false,
+        meta: { align: 'right' },
+        cell: ({ row }) =>
+          row.original.status === 'open' ? (
+            <Button variant="secondary" onClick={() => void resolve(row.original.id)}>
+              Mark resolved
+            </Button>
+          ) : null,
+      },
+    ],
+    [resolve],
+  );
 
   return (
     <div>
@@ -66,12 +124,14 @@ export default function Conversations() {
         title="Conversations"
         subtitle="Read-only view of worker chats, plus the escalations inbox"
       />
-      <div className="mb-4 flex gap-1 rounded-lg bg-stone-200/60 p-1 text-sm font-medium w-fit">
+      <div className="mb-4 flex w-fit gap-1 rounded-md bg-muted p-1 text-sm font-medium">
         {(['conversations', 'escalations'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`rounded-md px-4 py-1.5 capitalize ${tab === t ? 'bg-white shadow-sm' : 'text-stone-500'}`}
+            className={`rounded-sm px-4 py-1.5 capitalize transition-colors ${
+              tab === t ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground'
+            }`}
           >
             {t}
           </button>
@@ -86,25 +146,31 @@ export default function Conversations() {
             ) : convs.length === 0 ? (
               <EmptyState title="No conversations yet" />
             ) : (
-              <ul className="divide-y divide-stone-100">
+              <ul className="divide-y divide-border">
                 {convs.map((c) => (
                   <li key={c.id}>
                     <button
                       onClick={() => void open(c)}
-                      className={`w-full px-4 py-3 text-left hover:bg-stone-50 ${selected?.id === c.id ? 'bg-green-50' : ''}`}
+                      className={`w-full px-4 py-3 text-left transition-colors hover:bg-accent ${
+                        selected?.id === c.id ? 'bg-navactive-bg' : ''
+                      }`}
                     >
-                      <div className="flex justify-between">
-                        <span className="text-sm font-medium text-stone-800">{c.workerName}</span>
-                        <span className="text-xs text-stone-400">{timeAgo(c.lastMessageAt)}</span>
+                      <div className="flex justify-between gap-2">
+                        <span className="text-sm font-medium text-foreground">{c.workerName}</span>
+                        <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                          {timeAgo(c.lastMessageAt)}
+                        </span>
                       </div>
-                      <div className="text-xs text-stone-400">{c.messageCount} messages</div>
+                      <div className="font-mono text-xs tabular-nums text-muted-foreground">
+                        {c.messageCount} messages
+                      </div>
                     </button>
                   </li>
                 ))}
               </ul>
             )}
           </Card>
-          <Card className="col-span-3 max-h-[70vh] overflow-y-auto bg-stone-50">
+          <Card className="col-span-3 max-h-[70vh] overflow-y-auto bg-muted/30">
             {!selected ? (
               <EmptyState title="Pick a conversation" />
             ) : !msgs ? (
@@ -114,23 +180,29 @@ export default function Conversations() {
                 {msgs.map((m) => (
                   <div key={m.id} className={`flex ${m.direction === 'inbound' ? 'justify-start' : 'justify-end'}`}>
                     <div
-                      className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-sm shadow-sm ${
+                      className={`max-w-[80%] rounded-lg px-3.5 py-2 text-sm shadow-sm ${
                         m.direction === 'inbound'
-                          ? 'rounded-bl-sm bg-white text-stone-800'
-                          : 'rounded-br-sm bg-green-700 text-white'
+                          ? 'rounded-bl-sm border border-border bg-card text-foreground'
+                          : 'rounded-br-sm bg-primary text-primary-foreground'
                       }`}
                     >
                       {m.type === 'voice' && m.direction === 'inbound' && (
-                        <div className="mb-1 text-xs opacity-70">🎤 voice note (transcript)</div>
+                        <div className="mb-1 inline-flex items-center gap-1 text-xs opacity-70">
+                          <Mic className="size-3" aria-hidden="true" /> voice note (transcript)
+                        </div>
                       )}
-                      {m.type === 'template' && <div className="mb-1 text-xs opacity-70">📋 template</div>}
+                      {m.type === 'template' && (
+                        <div className="mb-1 inline-flex items-center gap-1 text-xs opacity-70">
+                          <ClipboardList className="size-3" aria-hidden="true" /> template
+                        </div>
+                      )}
                       <p className="whitespace-pre-wrap">{m.bodyText ?? m.transcriptText ?? ''}</p>
                       {m.direction === 'outbound' &&
                         m.bodyText &&
                         (() => {
                           const v = videoFromText(m.bodyText);
                           return v?.embedUrl ? (
-                            <div className="mt-1.5 aspect-video w-56 overflow-hidden rounded-lg border border-white/30">
+                            <div className="mt-1.5 aspect-video w-56 overflow-hidden rounded-md border border-white/30">
                               <iframe
                                 src={v.embedUrl}
                                 title="video de la lección"
@@ -143,13 +215,18 @@ export default function Conversations() {
                         })()}
                       {m.audioReplyUrl &&
                         (IS_DEMO ? (
-                          <div className="mt-1.5 w-fit rounded-full bg-black/10 px-3 py-1 text-xs opacity-90">
-                            🔊 respuesta de voz — silenciada en este demo (el sistema real envía audio TTS)
+                          <div className="mt-1.5 inline-flex w-fit items-center gap-1 rounded-full bg-black/10 px-3 py-1 text-xs opacity-90">
+                            <Volume2 className="size-3" aria-hidden="true" /> respuesta de voz —
+                            silenciada en este demo (el sistema real envía audio TTS)
                           </div>
                         ) : (
                           <audio controls src={m.audioReplyUrl} className="mt-1.5 h-9 w-52" />
                         ))}
-                      <div className={`mt-1 text-[10px] ${m.direction === 'inbound' ? 'text-stone-400' : 'text-green-100'}`}>
+                      <div
+                        className={`mt-1 font-mono text-[10px] tabular-nums ${
+                          m.direction === 'inbound' ? 'text-muted-foreground' : 'text-primary-foreground/80'
+                        }`}
+                      >
                         {fmtDateTime(m.createdAt)}
                       </div>
                     </div>
@@ -159,34 +236,24 @@ export default function Conversations() {
             )}
           </Card>
         </div>
-      ) : (
+      ) : !escalations ? (
         <Card>
-          {!escalations ? (
-            <Spinner />
-          ) : escalations.length === 0 ? (
-            <EmptyState title="No escalations" hint="When Establo can't answer from your SOPs, the gap shows up here." />
-          ) : (
-            <ul className="divide-y divide-stone-100">
-              {escalations.map((e) => (
-                <li key={e.id} className="flex items-start justify-between gap-4 px-5 py-3.5">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-stone-800">“{e.questionText}”</p>
-                    <p className="mt-0.5 text-xs text-stone-400">
-                      {e.workerName} · <Badge color="stone">{e.reason}</Badge> · {timeAgo(e.createdAt)}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {statusBadge(e.status)}
-                    {e.status === 'open' && (
-                      <Button variant="secondary" onClick={() => void resolve(e.id)}>
-                        Mark resolved
-                      </Button>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+          <Spinner />
+        </Card>
+      ) : escalations.length === 0 ? (
+        <Card>
+          <EmptyState
+            title="No escalations"
+            hint="When Establo can't answer from your SOPs, the gap shows up here."
+          />
+        </Card>
+      ) : (
+        <Card className="overflow-hidden">
+          <DataTable
+            columns={escalationColumns}
+            data={escalations}
+            initialSorting={[{ id: 'createdAt', desc: true }]}
+          />
         </Card>
       )}
     </div>

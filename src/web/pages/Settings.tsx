@@ -1,7 +1,16 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { Check } from 'lucide-react';
 import { api, fmtDate } from '../api';
 import { useAuth } from '../auth';
 import { Badge, Button, Card, ErrorNote, Input, Label, PageHeader, Textarea } from '../components';
+
+function SavedNote() {
+  return (
+    <span className="inline-flex items-center gap-1 text-sm text-success">
+      <Check className="size-4" aria-hidden="true" /> Saved
+    </span>
+  );
+}
 
 interface BillingStatus {
   enabled: boolean;
@@ -94,7 +103,7 @@ export default function Settings() {
       <ErrorNote error={error} />
 
       <Card className="mb-4 max-w-xl p-5">
-        <h2 className="mb-4 text-sm font-semibold text-stone-700">Organization</h2>
+        <h2 className="mb-4 text-sm font-medium text-foreground">Organization</h2>
         <form onSubmit={(e) => void save(e)} className="space-y-3">
           <div>
             <Label>Dairy name</Label>
@@ -112,30 +121,33 @@ export default function Settings() {
           </div>
           <div className="flex items-center gap-3">
             <Button type="submit">Save</Button>
-            {saved && <span className="text-sm text-green-700">Saved ✓</span>}
+            {saved && <SavedNote />}
           </div>
         </form>
       </Card>
 
       <Card className="mb-4 max-w-xl p-5">
-        <h2 className="mb-2 text-sm font-semibold text-stone-700">Run mode</h2>
-        <p className="text-sm text-stone-600">
-          This server is running in <Badge color={runMode === 'production' ? 'green' : 'amber'}>{runMode}</Badge>{' '}
-          mode. See the README for the path from mock → sandbox → production.
+        <h2 className="mb-2 text-sm font-medium text-foreground">Run mode</h2>
+        <p className="text-sm text-foreground">
+          This server is running in{' '}
+          <Badge color={runMode === 'production' ? 'green' : 'amber'}>{runMode}</Badge> mode. See the
+          README for the path from mock to sandbox to production.
         </p>
       </Card>
 
       {agreement && (
         <Card className="mb-4 max-w-xl p-5">
-          <h2 className="mb-1 text-sm font-semibold text-stone-700">
-            Cow care agreement{' '}
-            <Badge color="stone">v{agreement.version}</Badge>
+          <h2 className="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+            Cow care agreement
+            <Badge color="stone">
+              <span className="font-mono">v{agreement.version}</span>
+            </Badge>
           </h2>
-          <p className="mb-3 text-xs text-stone-400">
+          <p className="mb-3 text-xs text-muted-foreground">
             FARM Animal Care v5 expects every employee with animal care responsibilities to sign
             this, renewed annually. Workers sign by replying ACEPTO on WhatsApp. Editing the text
-            creates version {agreement.version + 1}; existing signatures keep their version.
-            Current version since {fmtDate(agreement.createdAt)}.
+            creates a new version; existing signatures keep their version. Current version since{' '}
+            <span className="font-mono tabular-nums">{fmtDate(agreement.createdAt)}</span>.
           </p>
           <Textarea
             rows={12}
@@ -149,23 +161,24 @@ export default function Settings() {
             >
               Save as new version
             </Button>
-            {agreementSaved && <span className="text-sm text-green-700">Saved ✓</span>}
+            {agreementSaved && <SavedNote />}
           </div>
         </Card>
       )}
 
       {billing?.enabled && (
         <Card className="max-w-xl p-5">
-          <h2 className="mb-2 text-sm font-semibold text-stone-700">Billing</h2>
+          <h2 className="mb-2 text-sm font-medium text-foreground">Billing</h2>
           {billing.billing.active ? (
-            <p className="text-sm text-stone-600">
+            <p className="text-sm text-foreground">
               Subscription <Badge color="green">active</Badge> — base fee + per-cow pricing.
             </p>
           ) : (
             <div>
-              <p className="mb-3 text-sm text-stone-600">
-                No active subscription. Establo bills a flat base fee plus a per-cow amount
-                (your herd size: {me?.org.herdSize ?? '—'} cows).
+              <p className="mb-3 text-sm text-foreground">
+                No active subscription. Establo bills a flat base fee plus a per-cow amount (your
+                herd size: <span className="font-mono tabular-nums">{me?.org.herdSize ?? '—'}</span>{' '}
+                cows).
               </p>
               <Button onClick={() => void checkout()}>Set up billing with Stripe</Button>
             </div>

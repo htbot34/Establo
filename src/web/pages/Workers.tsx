@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
+import { Check, Printer } from 'lucide-react';
+import { type ColumnDef } from '@tanstack/react-table';
 import { api, IS_DEMO, timeAgo } from '../api';
 import { WORKER_ROLES, WORKER_ROLE_LABELS } from '../../server/services/roles';
 import {
@@ -18,6 +20,7 @@ import {
   Textarea,
   statusBadge,
 } from '../components';
+import { DataTable } from '../ui/data-table';
 
 export interface WorkerRow {
   id: string;
@@ -53,15 +56,102 @@ const CONSENT_FILTERS = [
 ];
 
 function agreementCell(w: WorkerRow) {
-  if (!w.agreement) return <span className="text-stone-400">unsigned</span>;
+  if (!w.agreement) return <span className="text-muted-foreground">unsigned</span>;
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className="text-stone-600">✓ v{w.agreement.version}</span>
-      <span className="text-xs text-stone-400">({w.agreement.method})</span>
+      <span className="inline-flex items-center gap-1 text-foreground">
+        <Check className="size-3.5 text-success" aria-hidden="true" />
+        <span className="font-mono">v{w.agreement.version}</span>
+      </span>
+      <span className="text-xs text-muted-foreground">({w.agreement.method})</span>
       {w.agreement.renewalDue && <Badge color="amber">renewal due</Badge>}
     </span>
   );
 }
+
+const columns: ColumnDef<WorkerRow>[] = [
+  {
+    accessorKey: 'name',
+    header: 'Name',
+    cell: ({ row }) => {
+      const w = row.original;
+      return (
+        <span className="flex items-center gap-2">
+          <Link to={`/workers/${w.id}`} className="font-medium text-primary hover:underline">
+            {w.name}
+          </Link>
+          {w.status !== 'active' && statusBadge(w.status)}
+        </span>
+      );
+    },
+  },
+  {
+    accessorKey: 'phoneE164',
+    header: 'Phone',
+    meta: { cellClassName: 'font-mono text-xs text-muted-foreground' },
+  },
+  {
+    id: 'role',
+    accessorFn: (w) =>
+      (w.jobRole && WORKER_ROLE_LABELS[w.jobRole as keyof typeof WORKER_ROLE_LABELS]) || '',
+    header: 'Role',
+    cell: ({ row }) => {
+      const w = row.original;
+      const label =
+        w.jobRole && WORKER_ROLE_LABELS[w.jobRole as keyof typeof WORKER_ROLE_LABELS];
+      return label ? (
+        <Badge color="blue">{label}</Badge>
+      ) : (
+        <span className="text-muted-foreground">unassigned</span>
+      );
+    },
+  },
+  {
+    id: 'consent',
+    accessorFn: (w) => w.consentStatus ?? 'opted_in',
+    header: 'Consent',
+    cell: ({ row }) => consentBadge(row.original.consentStatus),
+  },
+  {
+    id: 'agreement',
+    header: 'Agreement',
+    enableSorting: false,
+    cell: ({ row }) => agreementCell(row.original),
+  },
+  {
+    id: 'onboarding',
+    header: 'Onboarding',
+    enableSorting: false,
+    cell: ({ row }) => {
+      const w = row.original;
+      if (!w.enrollment) return <span className="text-muted-foreground">—</span>;
+      return (
+        <span className="text-foreground">
+          {w.enrollment.trackName}
+          <span className="ml-1.5 font-mono text-xs tabular-nums text-muted-foreground">
+            {w.enrollment.modulesAnswered}/{w.enrollment.modulesTotal} modules
+          </span>
+          {w.enrollment.status === 'completed' && (
+            <Check className="ml-1 inline size-3.5 text-success" aria-hidden="true" />
+          )}
+          {(w.consentStatus ?? 'opted_in') === 'pending' && (
+            <span className="ml-1.5 text-xs font-medium text-warning">
+              — lessons wait for opt-in
+            </span>
+          )}
+        </span>
+      );
+    },
+  },
+  {
+    id: 'lastActive',
+    accessorFn: (w) => w.lastInboundAt ?? '',
+    header: 'Last active',
+    cell: ({ row }) => (
+      <span className="text-muted-foreground">{timeAgo(row.original.lastInboundAt)}</span>
+    ),
+  },
+];
 
 export default function Workers() {
   const [rows, setRows] = useState<WorkerRow[] | null>(null);
@@ -116,7 +206,9 @@ export default function Workers() {
           <>
             {!IS_DEMO && (
               <a href="/api/consent-form" target="_blank" rel="noreferrer">
-                <Button variant="secondary">🖨 Print consent form</Button>
+                <Button variant="secondary">
+                  <Printer aria-hidden="true" /> Print consent form
+                </Button>
               </a>
             )}
             <Button onClick={() => setAdding(true)}>+ Add worker</Button>
@@ -134,75 +226,32 @@ export default function Workers() {
           </Select>
         </div>
         {rows && consentFilter !== 'all' && (
-          <span className="text-xs text-stone-400">
+          <span className="font-mono text-xs tabular-nums text-muted-foreground">
             {visible?.length ?? 0} of {rows.length} workers
           </span>
         )}
       </div>
-      <Card>
-        {!rows ? (
+      {!rows ? (
+        <Card>
           <Spinner />
-        ) : rows.length === 0 ? (
-          <EmptyState title="No workers yet" hint="Add a worker with their WhatsApp number to get started." />
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-stone-200 text-left text-xs uppercase tracking-wide text-stone-400">
-                <th className="px-5 py-3 font-medium">Name</th>
-                <th className="px-3 py-3 font-medium">Phone</th>
-                <th className="px-3 py-3 font-medium">Role</th>
-                <th className="px-3 py-3 font-medium">Consent</th>
-                <th className="px-3 py-3 font-medium">Agreement</th>
-                <th className="px-3 py-3 font-medium">Onboarding</th>
-                <th className="px-3 py-3 font-medium">Last active</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-stone-100">
-              {visible!.map((w) => (
-                <tr key={w.id} className="hover:bg-stone-50">
-                  <td className="px-5 py-3">
-                    <Link to={`/workers/${w.id}`} className="font-medium text-green-900 hover:underline">
-                      {w.name}
-                    </Link>
-                    {w.status !== 'active' && <span className="ml-2">{statusBadge(w.status)}</span>}
-                  </td>
-                  <td className="px-3 py-3 font-mono text-xs text-stone-600">{w.phoneE164}</td>
-                  <td className="px-3 py-3 text-xs text-stone-600">
-                    {w.jobRole && WORKER_ROLE_LABELS[w.jobRole as keyof typeof WORKER_ROLE_LABELS] ? (
-                      <Badge color="blue">
-                        {WORKER_ROLE_LABELS[w.jobRole as keyof typeof WORKER_ROLE_LABELS]}
-                      </Badge>
-                    ) : (
-                      <span className="text-stone-400">unassigned</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-3">{consentBadge(w.consentStatus)}</td>
-                  <td className="px-3 py-3">{agreementCell(w)}</td>
-                  <td className="px-3 py-3 text-stone-600">
-                    {w.enrollment ? (
-                      <span>
-                        {w.enrollment.trackName}
-                        <span className="ml-1.5 text-xs text-stone-400">
-                          {w.enrollment.modulesAnswered}/{w.enrollment.modulesTotal} modules
-                          {w.enrollment.status === 'completed' && ' ✓'}
-                        </span>
-                        {(w.consentStatus ?? 'opted_in') === 'pending' && (
-                          <span className="ml-1.5 text-xs font-medium text-amber-700">
-                            — lessons wait for opt-in
-                          </span>
-                        )}
-                      </span>
-                    ) : (
-                      <span className="text-stone-400">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-3 text-stone-500">{timeAgo(w.lastInboundAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
+        </Card>
+      ) : rows.length === 0 ? (
+        <Card>
+          <EmptyState
+            title="No workers yet"
+            hint="Add a worker with their WhatsApp number to get started."
+          />
+        </Card>
+      ) : (
+        <Card className="overflow-hidden">
+          <DataTable
+            columns={columns}
+            data={visible ?? []}
+            initialSorting={[{ id: 'name', desc: false }]}
+            emptyState={<EmptyState title="No workers match this filter." />}
+          />
+        </Card>
+      )}
 
       {adding && (
         <Modal title="Add worker" onClose={() => setAdding(false)}>
@@ -231,7 +280,7 @@ export default function Workers() {
               <Label>Notes (optional)</Label>
               <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
             </div>
-            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <p className="badge-warning rounded-md px-3 py-2 text-xs">
               Adding a worker does <strong>not</strong> opt them in. They opt in themselves by
               texting the number (ALTA or any first message), or sign the printable consent form
               and you attest it on their record. Until then Establo sends them nothing.

@@ -1,6 +1,12 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, createHashRouter, RouterProvider } from 'react-router-dom';
+import '@fontsource/ibm-plex-sans/400.css';
+import '@fontsource/ibm-plex-sans/500.css';
+import '@fontsource/ibm-plex-sans/600.css';
+import '@fontsource/ibm-plex-mono/400.css';
+import '@fontsource/ibm-plex-mono/500.css';
+import '@fontsource/ibm-plex-mono/600.css';
 import { IS_DEMO } from './api';
 import { AuthProvider } from './auth';
 import Layout from './Layout';
@@ -15,6 +21,7 @@ import Conversations from './pages/Conversations';
 import Audit from './pages/Audit';
 import Settings from './pages/Settings';
 import Simulator from './pages/Simulator';
+import { Toaster } from './ui/sonner';
 import './styles.css';
 
 const routes = [
@@ -47,6 +54,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthProvider>
       <RouterProvider router={router} />
+      <Toaster />
     </AuthProvider>
   </StrictMode>,
 );

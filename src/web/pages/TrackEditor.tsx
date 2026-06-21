@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { ArrowDown, ArrowLeft, ArrowUp, Check, Sparkles, Video } from 'lucide-react';
 import { api } from '../api';
 import { WORKER_ROLES, WORKER_ROLE_LABELS } from '../../server/services/roles';
 import { parseVideoUrl } from '../../server/services/video';
 import {
+  Badge,
   Button,
   Card,
   ErrorNote,
@@ -188,7 +190,13 @@ export default function TrackEditor() {
   return (
     <div>
       <div className="mb-2 text-xs">
-        <Link to="/onboarding" className="text-green-800 hover:underline">← Onboarding</Link>
+        <Link
+          to="/onboarding"
+          className="inline-flex items-center gap-1 text-primary hover:underline"
+        >
+          <ArrowLeft className="size-3.5" aria-hidden="true" />
+          Onboarding
+        </Link>
       </div>
       <PageHeader
         title={track.name}
@@ -196,7 +204,7 @@ export default function TrackEditor() {
         actions={
           <>
             <Button variant="secondary" onClick={() => { setError(null); setGenerating(true); }}>
-              ✨ Generate from SOP
+              <Sparkles aria-hidden="true" /> Generate from SOP
             </Button>
             <Button onClick={() => openEditor('new')}>+ Add module</Button>
           </>
@@ -209,44 +217,51 @@ export default function TrackEditor() {
           <Card key={m.id} className="p-5">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-xs font-semibold text-stone-400">#{idx + 1}</span>
-                  <h3 className="font-medium text-stone-800">{m.title}</h3>
-                  <span className="text-xs text-stone-400">
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <span className="font-mono text-xs font-semibold tabular-nums text-muted-foreground">
+                    #{idx + 1}
+                  </span>
+                  <h3 className="font-medium text-foreground">{m.title}</h3>
+                  <span className="font-mono text-xs tabular-nums text-muted-foreground">
                     day {m.dayOffset} · {m.sendHourLocal}:00 local
                   </span>
                   {m.farmTopic && m.farmTopic !== 'none' && (
-                    <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">
-                      {FARM_TOPIC_SHORT[m.farmTopic] ?? m.farmTopic}
-                    </span>
+                    <Badge color="green">{FARM_TOPIC_SHORT[m.farmTopic] ?? m.farmTopic}</Badge>
                   )}
                   {!m.appliesToRoles || m.appliesToRoles.length === 0 ? (
-                    <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium text-sky-800">
-                      All roles
-                    </span>
+                    <Badge color="blue">All roles</Badge>
                   ) : (
                     m.appliesToRoles.map((r) => (
-                      <span
-                        key={r}
-                        className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium text-sky-800"
-                      >
+                      <Badge key={r} color="blue">
                         {ROLE_SHORT[r] ?? r}
-                      </span>
+                      </Badge>
                     ))
                   )}
                   {m.videoUrl && (
-                    <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-medium text-rose-800">
-                      📹 video
-                    </span>
+                    <Badge color="stone">
+                      <span className="inline-flex items-center gap-1">
+                        <Video className="size-3" aria-hidden="true" /> video
+                      </span>
+                    </Badge>
                   )}
                 </div>
-                <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap text-sm text-stone-600">{m.bodyEs}</p>
-                <div className="mt-2 rounded-lg bg-stone-50 p-2.5 text-xs text-stone-600">
-                  <span className="font-medium">Check:</span> {m.checkQuestionEs}
+                <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap text-sm text-muted-foreground">{m.bodyEs}</p>
+                <div className="mt-2 rounded-md bg-muted/50 p-2.5 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">Check:</span> {m.checkQuestionEs}
                   <ol className="mt-1 space-y-0.5">
                     {m.checkOptionsEs.map((o, i) => (
-                      <li key={i} className={i === m.checkCorrectIndex ? 'font-semibold text-green-800' : ''}>
-                        {i + 1}) {o} {i === m.checkCorrectIndex && '✓'}
+                      <li
+                        key={i}
+                        className={
+                          i === m.checkCorrectIndex
+                            ? 'flex items-center gap-1.5 font-medium text-success'
+                            : 'flex items-center gap-1.5'
+                        }
+                      >
+                        <span className="font-mono tabular-nums">{i + 1})</span> {o}
+                        {i === m.checkCorrectIndex && (
+                          <Check className="size-3.5" aria-hidden="true" />
+                        )}
                       </li>
                     ))}
                   </ol>
@@ -254,8 +269,17 @@ export default function TrackEditor() {
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1">
                 <div className="flex gap-1">
-                  <Button variant="ghost" onClick={() => void move(idx, -1)} disabled={idx === 0}>↑</Button>
-                  <Button variant="ghost" onClick={() => void move(idx, 1)} disabled={idx === track.modules.length - 1}>↓</Button>
+                  <Button variant="ghost" aria-label="Move up" onClick={() => void move(idx, -1)} disabled={idx === 0}>
+                    <ArrowUp aria-hidden="true" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    aria-label="Move down"
+                    onClick={() => void move(idx, 1)}
+                    disabled={idx === track.modules.length - 1}
+                  >
+                    <ArrowDown aria-hidden="true" />
+                  </Button>
                 </div>
                 <Button variant="ghost" onClick={() => openEditor(m)}>Edit</Button>
                 <Button variant="ghost" onClick={() => void removeModule(m)}>Delete</Button>
@@ -264,7 +288,7 @@ export default function TrackEditor() {
           </Card>
         ))}
         {track.modules.length === 0 && (
-          <Card className="p-8 text-center text-sm text-stone-400">
+          <Card className="p-8 text-center text-sm text-muted-foreground">
             No modules yet — add one by hand or generate drafts from an SOP.
           </Card>
         )}
@@ -306,16 +330,16 @@ export default function TrackEditor() {
               </div>
               <div className="col-span-2">
                 <Label>
-                  Delivered to roles — leave all unchecked for “All roles (universal)”
+                  Delivered to roles — leave all unchecked for "All roles (universal)"
                 </Label>
-                <div className="flex flex-wrap gap-3 rounded-lg border border-stone-200 p-2.5">
+                <div className="flex flex-wrap gap-3 rounded-md border border-border p-2.5">
                   {WORKER_ROLES.map((r) => {
                     const checked = form.appliesToRoles.includes(r);
                     return (
-                      <label key={r} className="flex items-center gap-1.5 text-sm text-stone-700">
+                      <label key={r} className="flex items-center gap-1.5 text-sm text-foreground">
                         <input
                           type="checkbox"
-                          className="rounded border-stone-300"
+                          className="rounded border-input"
                           checked={checked}
                           onChange={(e) =>
                             setForm({
@@ -331,7 +355,7 @@ export default function TrackEditor() {
                     );
                   })}
                 </div>
-                <p className="mt-1 text-xs text-stone-400">
+                <p className="mt-1 text-xs text-muted-foreground">
                   {form.appliesToRoles.length === 0
                     ? 'Universal — every enrolled worker receives this lesson.'
                     : `Only workers with these roles receive it: ${form.appliesToRoles
@@ -340,7 +364,7 @@ export default function TrackEditor() {
                 </p>
               </div>
             </div>
-            <div className="rounded-lg border border-stone-200 p-3">
+            <div className="rounded-md border border-border p-3">
               <Label>Optional video — a link we send &amp; embed (never uploaded, hosted, or clipped)</Label>
               <Input
                 placeholder="https://www.youtube.com/watch?v=…  (YouTube, Vimeo, or any https link)"
@@ -348,7 +372,7 @@ export default function TrackEditor() {
                 onChange={(e) => setForm({ ...form, videoUrl: e.target.value })}
               />
               {form.videoUrl && !parseVideoUrl(form.videoUrl) && (
-                <p className="mt-1 text-xs text-red-600">Not a valid https video link.</p>
+                <p className="mt-1 text-xs text-destructive">Not a valid https video link.</p>
               )}
               {form.videoUrl && parseVideoUrl(form.videoUrl) && (
                 <>
@@ -365,10 +389,10 @@ export default function TrackEditor() {
                       <Label>Available languages</Label>
                       <div className="flex gap-3 pt-2">
                         {VIDEO_LANGS.map((lang) => (
-                          <label key={lang} className="flex items-center gap-1.5 text-sm text-stone-700">
+                          <label key={lang} className="flex items-center gap-1.5 text-sm text-foreground">
                             <input
                               type="checkbox"
-                              className="rounded border-stone-300"
+                              className="rounded border-input"
                               checked={form.videoLangs.includes(lang)}
                               onChange={(e) =>
                                 setForm({
@@ -386,7 +410,7 @@ export default function TrackEditor() {
                     </div>
                   </div>
                   {parseVideoUrl(form.videoUrl)?.embedUrl ? (
-                    <div className="mt-2 aspect-video w-full max-w-md overflow-hidden rounded-lg border border-stone-200">
+                    <div className="mt-2 aspect-video w-full max-w-md overflow-hidden rounded-md border border-border">
                       <iframe
                         src={parseVideoUrl(form.videoUrl)!.embedUrl!}
                         title="Video preview"
@@ -396,7 +420,7 @@ export default function TrackEditor() {
                       />
                     </div>
                   ) : (
-                    <p className="mt-2 text-xs text-stone-500">
+                    <p className="mt-2 text-xs text-muted-foreground">
                       Link will be sent to the worker (no inline preview for this provider).
                     </p>
                   )}
@@ -404,7 +428,10 @@ export default function TrackEditor() {
               )}
             </div>
             <div>
-              <Label>Lesson body (Spanish, ≤900 chars, written for low literacy) — {form.bodyEs.length}/900</Label>
+              <Label>
+                Lesson body (Spanish, ≤900 chars, written for low literacy) —{' '}
+                <span className="font-mono tabular-nums">{form.bodyEs.length}/900</span>
+              </Label>
               <Textarea
                 value={form.bodyEs} rows={7} maxLength={900} required
                 onChange={(e) => setForm({ ...form, bodyEs: e.target.value })}
@@ -448,7 +475,7 @@ export default function TrackEditor() {
       {generating && (
         <Modal title="Generate modules from an SOP" onClose={() => setGenerating(false)}>
           <ErrorNote error={error} />
-          <p className="mb-3 text-sm text-stone-600">
+          <p className="mb-3 text-sm text-muted-foreground">
             Claude drafts 3 modules (lesson + comprehension check) from the selected document.
             Review and edit them before enrolling anyone — you stay in control.
           </p>

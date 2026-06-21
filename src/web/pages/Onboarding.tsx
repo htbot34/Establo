@@ -71,26 +71,35 @@ export default function Onboarding() {
           {tracks.map((t) => (
             <Card key={t.id} className="flex items-center justify-between gap-4 p-5">
               <div className="min-w-0">
-                <Link to={`/onboarding/${t.id}`} className="font-medium text-green-900 hover:underline">
+                <Link
+                  to={`/onboarding/${t.id}`}
+                  className="font-medium text-primary hover:underline"
+                >
                   {t.name}
                 </Link>
                 {!t.active && <span className="ml-2">{statusBadge('paused')}</span>}
                 {t.description && (
-                  <p className="mt-0.5 truncate text-sm text-stone-500">{t.description}</p>
+                  <p className="mt-0.5 truncate text-sm text-muted-foreground">{t.description}</p>
                 )}
               </div>
               <div className="flex shrink-0 gap-5 text-center text-sm">
                 <div>
-                  <div className="font-semibold">{t.moduleCount}</div>
-                  <div className="text-xs text-stone-400">modules</div>
+                  <div className="font-mono font-medium tabular-nums text-foreground">
+                    {t.moduleCount}
+                  </div>
+                  <div className="text-xs text-muted-foreground">modules</div>
                 </div>
                 <div>
-                  <div className="font-semibold">{t.activeEnrollments}</div>
-                  <div className="text-xs text-stone-400">in progress</div>
+                  <div className="font-mono font-medium tabular-nums text-foreground">
+                    {t.activeEnrollments}
+                  </div>
+                  <div className="text-xs text-muted-foreground">in progress</div>
                 </div>
                 <div>
-                  <div className="font-semibold">{t.completedEnrollments}</div>
-                  <div className="text-xs text-stone-400">completed</div>
+                  <div className="font-mono font-medium tabular-nums text-foreground">
+                    {t.completedEnrollments}
+                  </div>
+                  <div className="text-xs text-muted-foreground">completed</div>
                 </div>
               </div>
             </Card>
