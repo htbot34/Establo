@@ -3,10 +3,36 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Establo</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐄</text></svg>" />
-    <script type="module" crossorigin src="./assets/index-D0o-7hYL.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-FYLtU-qN.css">
+    <title>Establo — SOP training & FARM compliance</title>
+    <meta
+      name="description"
+      content="Establo — Spanish-first WhatsApp SOP training and FARM Animal Care v5 compliance records for dairy operations."
+    />
+    <meta name="theme-color" content="#1E5A41" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0E1114" media="(prefers-color-scheme: dark)" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='2' y='2' width='28' height='28' rx='7' fill='%231E5A41'/><g stroke='%23ffffff' stroke-width='2.6' stroke-linecap='round'><line x1='10' y1='12' x2='22' y2='12'/><line x1='10' y1='16.5' x2='22' y2='16.5'/><line x1='10' y1='21' x2='22' y2='21'/></g></svg>"
+    />
+    <link
+      rel="apple-touch-icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231E5A41'/><g stroke='%23ffffff' stroke-width='2.6' stroke-linecap='round'><line x1='10' y1='12' x2='22' y2='12'/><line x1='10' y1='16.5' x2='22' y2='16.5'/><line x1='10' y1='21' x2='22' y2='21'/></g></svg>"
+    />
+    <script>
+      // Apply the persisted (or system) theme before paint to avoid a flash.
+      (function () {
+        try {
+          var t = localStorage.getItem('establo-theme');
+          var dark = t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (dark) document.documentElement.classList.add('dark');
+        } catch (e) {
+          /* storage blocked — fall back to light */
+        }
+      })();
+    </script>
+    <script type="module" crossorigin src="./assets/index-DpHbvmUg.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CM4JCU4g.css">
   </head>
   <body>
     <div id="root"></div>
