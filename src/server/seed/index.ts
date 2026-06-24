@@ -30,6 +30,7 @@ import { usingStubEmbeddings } from '../services/embeddings.js';
 import { ES } from '../services/messages.es.js';
 import { synthesizeSpeech } from '../services/speech.js';
 import { parseVideoUrl } from '../services/video.js';
+import { getCuratedVideo } from '../services/videoCatalog.js';
 import {
   DEMO_MODULES,
   DEMO_ORG,
@@ -38,7 +39,40 @@ import {
   DEMO_SOPS,
   DEMO_TRACK,
   DEMO_WORKERS,
+  type DemoModule,
 } from './data.js';
+
+/**
+ * Resolve a demo module's video columns. A `videoKey` pulls url/title/langs/
+ * provider/attribution from the curated catalog (the preferred path); otherwise
+ * the literal `videoUrl` fields are used as-is (back-compat). No video → nulls.
+ */
+function resolveModuleVideo(m: DemoModule): {
+  videoUrl: string | null;
+  videoTitleEs: string | null;
+  videoProvider: string | null;
+  videoLangs: string[] | null;
+  videoAttribution: string | null;
+} {
+  if (m.videoKey) {
+    const cv = getCuratedVideo(m.videoKey);
+    if (!cv) throw new Error(`Seed: unknown videoKey "${m.videoKey}"`);
+    return {
+      videoUrl: cv.url,
+      videoTitleEs: cv.titleEs,
+      videoProvider: cv.provider,
+      videoLangs: cv.langs,
+      videoAttribution: cv.attribution,
+    };
+  }
+  return {
+    videoUrl: m.videoUrl ?? null,
+    videoTitleEs: m.videoTitleEs ?? null,
+    videoProvider: m.videoUrl ? (parseVideoUrl(m.videoUrl)?.provider ?? null) : null,
+    videoLangs: m.videoLangs ?? null,
+    videoAttribution: m.videoUrl ? (m.videoAttribution ?? null) : null,
+  };
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -210,10 +244,7 @@ export async function seed(): Promise<void> {
         sendHourLocal: m.sendHourLocal,
         farmTopic: m.farmTopic,
         appliesToRoles: m.appliesToRoles,
-        videoUrl: m.videoUrl ?? null,
-        videoTitleEs: m.videoTitleEs ?? null,
-        videoProvider: m.videoUrl ? (parseVideoUrl(m.videoUrl)?.provider ?? null) : null,
-        videoLangs: m.videoLangs ?? null,
+        ...resolveModuleVideo(m),
         title: m.title,
         bodyEs: m.bodyEs,
         checkQuestionEs: m.checkQuestionEs,
@@ -226,7 +257,10 @@ export async function seed(): Promise<void> {
   console.log(`✓ Track "${track.name}" with ${moduleRows.length} modules`);
 
   const moduleTopic = (i: number) =>
-    ['Ordeño', 'Ordeño', 'Químicos y seguridad', 'Manejo de animales', 'Cuidado de becerras', 'Higiene'][i] ?? 'Otro';
+    [
+      'Ordeño', 'Ordeño', 'Químicos y seguridad', 'Manejo de animales',
+      'Cuidado de becerras', 'Higiene', 'Manejo de animales', 'Cuidado de becerras',
+    ][i] ?? 'Otro';
 
   /** Insert a fully-answered enrollment with all events; returns enrollment id. */
   async function seedCompletedEnrollment(

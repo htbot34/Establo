@@ -25,15 +25,16 @@ function firstName(fullName: string): string {
   return fullName.split(/\s+/)[0] ?? fullName;
 }
 
-/** Strip the citation line + emoji for text-to-speech (reads awkwardly aloud).
- *  The video line keeps a spoken mention but drops the URL (unspeakable). */
+/** Strip the citation + video-credit lines + emoji for text-to-speech (they
+ *  read awkwardly aloud). The video line keeps a spoken mention but drops the
+ *  URL (unspeakable); the source credit is dropped the same way as 📄 Fuente:. */
 export function ttsVariant(text: string): string {
   return text
     .split('\n')
-    .filter((l) => !l.includes('📄 Fuente:'))
+    .filter((l) => !l.includes('📄 Fuente:') && !l.includes('Crédito del video:'))
     .map((l) => (l.includes('📹') ? 'Te mandé también un video sobre esto. Míralo en el mensaje.' : l))
     .join('\n')
-    .replace(/[📚📄📹✅🎉👋🙏💪😅😊🐄📷]/gu, '')
+    .replace(/[📚📄📹✅🎉👋🙏💪😅😊🐄📷ℹ️]/gu, '')
     .trim();
 }
 
@@ -94,16 +95,20 @@ export async function enrollWorker(
   return { enrollmentId: enr.id, created: true };
 }
 
-function composeModuleMessage(module: Module, orderIndex: number, total: number): string {
+export function composeModuleMessage(module: Module, orderIndex: number, total: number): string {
   const lines = [
     ES.moduleHeader(orderIndex + 1, total, module.title),
     '',
     module.bodyEs,
   ];
   // Optional video: append a link line (it unfurls in WhatsApp). We never
-  // upload/host video — just send the link the manager attached.
+  // upload/host video — just send the link the manager attached. When the
+  // video carries a required source credit, the credit line follows it.
   if (module.videoUrl) {
     lines.push('', ES.videoLine(module.videoTitleEs || module.title, module.videoUrl));
+    if (module.videoAttribution) {
+      lines.push(ES.videoCredit(module.videoAttribution));
+    }
   }
   lines.push('', ES.checkPrompt(module.checkQuestionEs, module.checkOptionsEs));
   return lines.join('\n');

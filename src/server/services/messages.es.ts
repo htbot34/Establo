@@ -43,6 +43,9 @@ export const ES = {
   /** Optional video line appended to a lesson (the link unfurls in WhatsApp). */
   videoLine: (title: string, url: string) => `📹 Mira el video (${title}): ${url}`,
 
+  /** Required source credit for the video (kept on the worker's record too). */
+  videoCredit: (attribution: string) => `ℹ️ Crédito del video: ${attribution}`,
+
   checkReminderFreeform: (title: string) =>
     `Hola 👋 Te falta responder la pregunta de tu lección "${title}". ` +
     'Mira el mensaje de arriba y responde con 1, 2 o 3.',

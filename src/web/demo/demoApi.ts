@@ -257,9 +257,13 @@ function deliverModule(delivery: Row): boolean {
   const enrollment = s.enrollments.find((e) => e.id === delivery.enrollmentId)!;
   const total = s.modules.filter((m) => m.trackId === module.trackId).length;
   const lines = [ES.moduleHeader(module.orderIndex + 1, total, module.title), '', module.bodyEs];
-  // Optional video: append the same link line the real drip sends.
+  // Optional video: append the same link line the real drip sends, plus the
+  // required source credit when the video carries one.
   if (module.videoUrl) {
     lines.push('', ES.videoLine(module.videoTitleEs || module.title, module.videoUrl));
+    if (module.videoAttribution) {
+      lines.push(ES.videoCredit(module.videoAttribution));
+    }
   }
   lines.push('', ES.checkPrompt(module.checkQuestionEs, module.checkOptionsEs));
   const text = lines.join('\n');
@@ -947,6 +951,8 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
       ...body,
       videoUrl: video?.url ?? null,
       videoProvider: video?.provider ?? null,
+      // A source credit only makes sense with a video attached.
+      videoAttribution: video ? (body.videoAttribution ?? null) : null,
     };
     s.modules.push(row);
     return row;
@@ -978,6 +984,8 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
       const video = body.videoUrl ? parseVideoUrl(body.videoUrl) : null;
       module.videoUrl = video?.url ?? null;
       module.videoProvider = video?.provider ?? null;
+      // Clearing the video also clears its now-orphaned source credit.
+      if (!video) module.videoAttribution = null;
     }
     return module;
   }

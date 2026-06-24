@@ -196,6 +196,9 @@ export const modules = pgTable(
     videoTitleEs: text('video_title_es'),
     videoProvider: text('video_provider'),
     videoLangs: jsonb('video_langs').$type<string[]>(),
+    // Required source credit for the video (the "proper acknowledgment" a
+    // rights holder asks for). Shown to the worker and kept on the record.
+    videoAttribution: text('video_attribution'),
     title: text('title').notNull(),
     bodyEs: text('body_es').notNull(),
     checkQuestionEs: text('check_question_es').notNull(),

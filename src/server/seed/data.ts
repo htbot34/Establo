@@ -135,10 +135,17 @@ export interface DemoModule {
     | 'none';
   /** Role targeting: [] (empty) = universal (every role gets it). */
   appliesToRoles: WorkerRole[];
-  /** Optional video LINK (never hosted/clipped). Most modules have none. */
+  /**
+   * Optional video. Prefer `videoKey` (a curated catalog key) — the seed
+   * resolves url/title/langs/attribution/provider from services/videoCatalog.
+   * The literal `videoUrl`/`videoTitleEs`/`videoLangs`/`videoAttribution` path
+   * stays for back-compat. Establo never hosts/clips video — link only.
+   */
+  videoKey?: string;
   videoUrl?: string;
   videoTitleEs?: string;
   videoLangs?: string[];
+  videoAttribution?: string;
 }
 
 export const DEMO_MODULES: DemoModule[] = [
@@ -216,16 +223,11 @@ export const DEMO_MODULES: DemoModule[] = [
     sopKey: 'manejo',
     farmTopic: 'stockmanship_general',
     appliesToRoles: [], // universal — low-stress handling is for everyone
-    // Capability demo only: a PUBLIC video link attached to one module to show
-    // the optional per-module video feature. Establo never hosts, uploads,
-    // downloads, or clips video — it only sends/embeds a link. Re-hosting or
-    // clipping someone else's video requires their written permission;
-    // embedding a public link is the supported pattern. This is a placeholder
-    // sample — a real farm replaces it with its own or a licensed/extension
-    // video on low-stress cattle handling.
-    videoUrl: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
-    videoTitleEs: 'Ejemplo: manejo de ganado de bajo estrés',
-    videoLangs: ['es', 'en'],
+    // Universal onboarding video from the curated catalog (Hagevoort's
+    // "Considering Human and Animal Safety" series). The seed resolves the
+    // Spanish link, title, langs, provider, and the REQUIRED attribution from
+    // services/videoCatalog. Establo never hosts/clips video — link only.
+    videoKey: 'chas_outside_animal_care',
   },
   {
     dayOffset: 7,
@@ -267,6 +269,57 @@ export const DEMO_MODULES: DemoModule[] = [
     sopKey: 'cip',
     farmTopic: 'none',
     appliesToRoles: ['ordeno'],
+  },
+  // ── Role-segmented universal onboarding videos (curated catalog) ───────────
+  // Generic, professionally produced safety video for the milking crew. Shows
+  // role targeting: only ordeño workers receive it.
+  {
+    dayOffset: 12,
+    sendHourLocal: 7,
+    title: 'Seguridad en la sala de ordeño',
+    bodyEs:
+      'En la sala trabajas muy cerca de las vacas y de las máquinas. Cuídate así:\n' +
+      '1) Acércate a la vaca por el costado, donde te puede ver. Nunca de repente por detrás.\n' +
+      '2) Una patada sale rápido: avisa con tu voz y tu mano antes de tocarle la ubre.\n' +
+      '3) El piso mojado resbala. Camina despacio y usa botas con buena suela.\n' +
+      '4) Si una vaca está nerviosa o patea, dale su tiempo y avisa al encargado.\n' +
+      'Mira el video: te enseña cómo pararte y moverte seguro en la sala.',
+    checkQuestionEs: '¿Por dónde te acercas a una vaca en la sala de ordeño?',
+    checkOptionsEs: [
+      'Por detrás, sin avisar',
+      'Por el costado, donde te puede ver',
+      'Corriendo de frente',
+    ],
+    checkCorrectIndex: 1,
+    sopKey: 'ordeno',
+    farmTopic: 'stockmanship_general',
+    appliesToRoles: ['ordeno'],
+    videoKey: 'chas_milking_barn',
+  },
+  // Generic safety video for calf caretakers (covers milkers + calf care). Only
+  // becerras workers receive it.
+  {
+    dayOffset: 13,
+    sendHourLocal: 7,
+    title: 'Seguridad al cuidar becerras',
+    bodyEs:
+      'Cuidar becerras es trabajo de calma y limpieza. Para tu seguridad y la de ellas:\n' +
+      '1) Lávate y desinféctate las manos entre un grupo de becerras y otro: así no pasas enfermedades.\n' +
+      '2) Al cargar cubetas pesadas de leche o calostro, dobla las rodillas, no la espalda.\n' +
+      '3) Una becerra asustada puede brincar y pegarte sin querer. Muévete despacio y háblale.\n' +
+      '4) Si una becerra se ve enferma o muy débil, avisa al encargado; no la trates tú solo.\n' +
+      'Mira el video: cubre el trabajo seguro de ordeñadores y de quienes cuidan becerras.',
+    checkQuestionEs: '¿Cómo cargas una cubeta pesada de leche sin lastimarte?',
+    checkOptionsEs: [
+      'Doblando la espalda',
+      'Doblando las rodillas',
+      'Jalándola de un solo lado, rápido',
+    ],
+    checkCorrectIndex: 1,
+    sopKey: 'becerras',
+    farmTopic: 'preweaned_calf',
+    appliesToRoles: ['becerras'],
+    videoKey: 'chas_milker_calf',
   },
 ];
 

@@ -4,6 +4,7 @@ import { ArrowDown, ArrowLeft, ArrowUp, Check, Sparkles, Video } from 'lucide-re
 import { api } from '../api';
 import { WORKER_ROLES, WORKER_ROLE_LABELS } from '../../server/services/roles';
 import { parseVideoUrl } from '../../server/services/video';
+import { VIDEO_CATALOG } from '../../server/services/videoCatalog';
 import {
   Badge,
   Button,
@@ -28,6 +29,7 @@ interface ModuleRow {
   videoUrl?: string | null;
   videoTitleEs?: string | null;
   videoLangs?: string[] | null;
+  videoAttribution?: string | null;
   title: string;
   bodyEs: string;
   checkQuestionEs: string;
@@ -93,6 +95,7 @@ const EMPTY_MODULE = {
   videoUrl: '',
   videoTitleEs: '',
   videoLangs: [] as string[],
+  videoAttribution: '',
 };
 
 export default function TrackEditor() {
@@ -135,8 +138,28 @@ export default function TrackEditor() {
             videoUrl: mod.videoUrl ?? '',
             videoTitleEs: mod.videoTitleEs ?? '',
             videoLangs: [...(mod.videoLangs ?? [])],
+            videoAttribution: mod.videoAttribution ?? '',
           },
     );
+  }
+
+  /**
+   * Fill the video fields from a curated catalog entry. Role targeting and the
+   * FARM topic are pre-filled from the entry's suggestions ONLY when the manager
+   * hasn't set them yet (empty roles / 'none' topic) — never clobbering a choice.
+   */
+  function applyCatalog(key: string) {
+    const v = VIDEO_CATALOG.find((c) => c.key === key);
+    if (!v) return;
+    setForm((f) => ({
+      ...f,
+      videoUrl: v.url,
+      videoTitleEs: v.titleEs,
+      videoLangs: [...v.langs],
+      videoAttribution: v.attribution,
+      appliesToRoles: f.appliesToRoles.length === 0 ? [...v.suggestedRoles] : f.appliesToRoles,
+      farmTopic: f.farmTopic === 'none' ? v.suggestedFarmTopic : f.farmTopic,
+    }));
   }
 
   async function saveModule(e: FormEvent) {
@@ -366,6 +389,18 @@ export default function TrackEditor() {
             </div>
             <div className="rounded-md border border-border p-3">
               <Label>Optional video — a link we send &amp; embed (never uploaded, hosted, or clipped)</Label>
+              <Select
+                className="mb-2"
+                value={VIDEO_CATALOG.find((c) => c.url === form.videoUrl)?.key ?? ''}
+                onChange={(e) => applyCatalog(e.target.value)}
+              >
+                <option value="">Choose from training library… (or paste a link below)</option>
+                {VIDEO_CATALOG.map((c) => (
+                  <option key={c.key} value={c.key}>
+                    {c.titleEs} — {c.series}
+                  </option>
+                ))}
+              </Select>
               <Input
                 placeholder="https://www.youtube.com/watch?v=…  (YouTube, Vimeo, or any https link)"
                 value={form.videoUrl}
@@ -409,6 +444,19 @@ export default function TrackEditor() {
                       </div>
                     </div>
                   </div>
+                  <div className="mt-2">
+                    <Label>Video attribution</Label>
+                    <Textarea
+                      value={form.videoAttribution}
+                      rows={2}
+                      maxLength={400}
+                      placeholder="«Título» — producido por… Usado con autorización."
+                      onChange={(e) => setForm({ ...form, videoAttribution: e.target.value })}
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Required credit — shown to the worker and kept on the training record.
+                    </p>
+                  </div>
                   {parseVideoUrl(form.videoUrl)?.embedUrl ? (
                     <div className="mt-2 aspect-video w-full max-w-md overflow-hidden rounded-md border border-border">
                       <iframe
@@ -422,6 +470,11 @@ export default function TrackEditor() {
                   ) : (
                     <p className="mt-2 text-xs text-muted-foreground">
                       Link will be sent to the worker (no inline preview for this provider).
+                    </p>
+                  )}
+                  {form.videoAttribution.trim() && (
+                    <p className="mt-1.5 text-xs italic text-muted-foreground">
+                      ℹ️ {form.videoAttribution}
                     </p>
                   )}
                 </>

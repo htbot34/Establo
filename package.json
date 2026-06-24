@@ -17,6 +17,7 @@
     "migrate": "tsx src/server/db/migrate.ts",
     "seed": "tsx src/server/seed/index.ts",
     "ask": "tsx scripts/ask.ts",
+    "verify-video-catalog": "tsx scripts/verify-video-catalog.ts",
     "eval": "tsx scripts/run-eval.ts",
     "generate-eval": "tsx scripts/generate-eval.ts",
     "sample-image": "tsx scripts/make-sample-sop-image.ts",

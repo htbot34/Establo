@@ -743,6 +743,8 @@ export function registerApiRoutes(app: FastifyInstance): void {
       .optional(),
     videoTitleEs: z.string().max(160).nullable().optional(),
     videoLangs: z.array(z.string().min(2).max(5)).max(8).nullable().optional(),
+    // Required source credit shown with the video; cleared when the video is.
+    videoAttribution: z.string().max(400).nullable().optional(),
   });
 
   app.post<{ Params: { id: string } }>('/api/tracks/:id/modules', async (req, reply) => {
@@ -771,6 +773,8 @@ export function registerApiRoutes(app: FastifyInstance): void {
         ...parsed.data,
         videoUrl: video?.url ?? null,
         videoProvider: video?.provider ?? null,
+        // A source credit only makes sense with a video attached.
+        videoAttribution: video ? (parsed.data.videoAttribution ?? null) : null,
       })
       .returning();
     return row;
@@ -786,7 +790,10 @@ export function registerApiRoutes(app: FastifyInstance): void {
       'videoUrl' in parsed.data
         ? (() => {
             const v = parsed.data.videoUrl ? parseVideoUrl(parsed.data.videoUrl) : null;
-            return { videoUrl: v?.url ?? null, videoProvider: v?.provider ?? null };
+            // Clearing the video also clears its now-orphaned source credit.
+            return v
+              ? { videoUrl: v.url, videoProvider: v.provider }
+              : { videoUrl: null, videoProvider: null, videoAttribution: null };
           })()
         : {};
     const db = getDb();
