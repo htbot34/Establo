@@ -61,11 +61,27 @@ export type SendRefusalReason =
   | 'window_closed'
   | 'worker_not_found'
   | 'not_opted_in'
-  | 'templates_paused';
+  | 'templates_paused'
+  | 'template_not_configured';
 
 export type SendOutcome =
   | { ok: true; messageIds: string[]; sids: string[] }
   | { ok: false; reason: SendRefusalReason; messageIds: [] };
+
+/**
+ * Map a template name to its configured Twilio ContentSid (resolved at call
+ * time, not module load, so tests/dev can set env before first use). Undefined
+ * when the template has no SID configured — the live send path refuses rather
+ * than falling back to a free-form Body.
+ */
+function contentSidFor(name: TemplateName): string | undefined {
+  const c = config();
+  return name === 'establo_module_notify'
+    ? c.twilioContentSidModuleNotify
+    : name === 'establo_check_reminder'
+      ? c.twilioContentSidCheckReminder
+      : undefined;
+}
 
 async function findOrCreateConversation(db: Db, workerId: string, orgId: string) {
   const existing = await db
@@ -135,53 +151,94 @@ export async function sendToWorker(
     return { ok: false, reason: 'window_closed', messageIds: [] };
   }
 
+  // Live (non-mock) template sends go through Twilio's Content API and require
+  // a Meta-approved ContentSid. If one isn't configured we MUST NOT fall back
+  // to a free-form Body — Meta rejects that outside the 24h window (63016) and
+  // it fails silently/async. Refuse loudly instead. (Mock mode needs no SID.)
+  const liveTemplate = isTemplate && !config().isMock;
+  const contentSid = liveTemplate ? contentSidFor(payload.template!.name) : undefined;
+  if (liveTemplate && !contentSid) {
+    console.error(
+      `✗ Template send "${payload.template!.name}" to ${maskPhone(worker.phoneE164)} refused: ` +
+        'no ContentSid configured (set TWILIO_CONTENT_SID_MODULE_NOTIFY / ' +
+        'TWILIO_CONTENT_SID_CHECK_REMINDER). Not sent as free-form.',
+    );
+    return { ok: false, reason: 'template_not_configured', messageIds: [] };
+  }
+
   const conv = await findOrCreateConversation(db, worker.id, worker.orgId);
   const transport = getTransport();
-  const text = payload.template
-    ? renderTemplate(payload.template.name, payload.template.vars)
+  const text = isTemplate
+    ? renderTemplate(payload.template!.name, payload.template!.vars)
     : payload.text;
 
   const messageIds: string[] = [];
   const sids: string[] = [];
 
-  for (const segment of splitMessage(text)) {
-    const { sid, status } = await transport.send({ to: worker.phoneE164, body: segment });
+  if (isTemplate) {
+    // Templates are atomic — one message, never run through splitMessage. Live:
+    // Content API (ContentSid/ContentVariables, no Body). Mock: store the
+    // rendered copy so the simulator/dashboard shows readable text.
+    const { sid, status } = contentSid
+      ? await transport.send({
+          to: worker.phoneE164,
+          template: { contentSid, vars: payload.template!.vars },
+        })
+      : await transport.send({ to: worker.phoneE164, body: text });
     const [row] = await db
       .insert(messages)
       .values({
         conversationId: conv.id,
         orgId: worker.orgId,
         direction: 'outbound',
-        type: isTemplate ? 'template' : 'text',
-        bodyText: segment,
+        type: 'template',
+        bodyText: text,
         twilioSid: sid,
         status,
       })
       .returning({ id: messages.id });
     messageIds.push(row.id);
     sids.push(sid);
-  }
+  } else {
+    for (const segment of splitMessage(text)) {
+      const { sid, status } = await transport.send({ to: worker.phoneE164, body: segment });
+      const [row] = await db
+        .insert(messages)
+        .values({
+          conversationId: conv.id,
+          orgId: worker.orgId,
+          direction: 'outbound',
+          type: 'text',
+          bodyText: segment,
+          twilioSid: sid,
+          status,
+        })
+        .returning({ id: messages.id });
+      messageIds.push(row.id);
+      sids.push(sid);
+    }
 
-  if (payload.audioUrl && !isTemplate) {
-    const absoluteUrl = `${config().publicBaseUrl}${payload.audioUrl}`;
-    const { sid, status } = await transport.send({
-      to: worker.phoneE164,
-      mediaUrl: absoluteUrl,
-    });
-    const [row] = await db
-      .insert(messages)
-      .values({
-        conversationId: conv.id,
-        orgId: worker.orgId,
-        direction: 'outbound',
-        type: 'voice',
-        audioReplyUrl: payload.audioUrl,
-        twilioSid: sid,
-        status,
-      })
-      .returning({ id: messages.id });
-    messageIds.push(row.id);
-    sids.push(sid);
+    if (payload.audioUrl) {
+      const absoluteUrl = `${config().publicBaseUrl}${payload.audioUrl}`;
+      const { sid, status } = await transport.send({
+        to: worker.phoneE164,
+        mediaUrl: absoluteUrl,
+      });
+      const [row] = await db
+        .insert(messages)
+        .values({
+          conversationId: conv.id,
+          orgId: worker.orgId,
+          direction: 'outbound',
+          type: 'voice',
+          audioReplyUrl: payload.audioUrl,
+          twilioSid: sid,
+          status,
+        })
+        .returning({ id: messages.id });
+      messageIds.push(row.id);
+      sids.push(sid);
+    }
   }
 
   await db

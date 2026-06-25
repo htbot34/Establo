@@ -41,6 +41,10 @@ function buildConfig(env: NodeJS.ProcessEnv) {
     twilioAuthToken: env.TWILIO_AUTH_TOKEN || undefined,
     twilioWhatsAppFrom: env.TWILIO_WHATSAPP_FROM ?? 'whatsapp:+14155238886',
     twilioValidateSignature: bool(env.TWILIO_VALIDATE_SIGNATURE, runMode === 'production'),
+    // Twilio Content template SIDs, issued once Meta approves each template.
+    // Required for proactive drip in production; undefined in mock/dev.
+    twilioContentSidModuleNotify: env.TWILIO_CONTENT_SID_MODULE_NOTIFY || undefined,
+    twilioContentSidCheckReminder: env.TWILIO_CONTENT_SID_CHECK_REMINDER || undefined,
 
     retrievalTopK: Number(env.RETRIEVAL_TOP_K ?? 6),
     retrievalMinSimilarity: env.RETRIEVAL_MIN_SIMILARITY
