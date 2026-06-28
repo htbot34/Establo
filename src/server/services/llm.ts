@@ -1,4 +1,6 @@
 import { config } from '../config.js';
+// Type-only — erased at compile time, so it doesn't defeat the lazy client load.
+import type Anthropic from '@anthropic-ai/sdk';
 
 /**
  * Thin wrapper over the Anthropic API. Callers must check
@@ -21,6 +23,67 @@ async function getClient() {
   return clientPromise;
 }
 
+/**
+ * The model that last worked, cached for the rest of the process so a retired
+ * primary isn't re-paid on every request. Reset if it later goes unavailable.
+ */
+let resolvedModel: string | undefined;
+
+/**
+ * A retired/unknown model returns HTTP 404 with `error.type === 'not_found_error'`.
+ * Detected robustly without needing the SDK error class at runtime.
+ */
+function isModelUnavailable(err: unknown): boolean {
+  const e = err as { status?: number; error?: { error?: { type?: string } }; message?: string };
+  if (e?.status === 404) return true;
+  if (e?.error?.error?.type === 'not_found_error') return true;
+  const m = (e?.message ?? '').toLowerCase();
+  return m.includes('not_found_error') || (m.includes('model') && m.includes('deprecat'));
+}
+
+/**
+ * Self-healing wrapper over `messages.create`: the single Claude call path for
+ * the app. Tries the last-working model, then the configured primary, then the
+ * fallback chain, advancing only on a model-not-found error and remembering the
+ * model that succeeds. Every other error (auth, rate limit, validation, network)
+ * is surfaced immediately — we never burn through the whole chain (and the user's
+ * money on every tier) masking a real problem.
+ */
+async function createMessage(
+  params: Omit<Anthropic.MessageCreateParamsNonStreaming, 'model'>,
+): Promise<Anthropic.Message> {
+  const cfg = config();
+  const chain = [resolvedModel, cfg.anthropicModel, ...cfg.anthropicModelFallbacks]
+    .filter((m): m is string => !!m)
+    .filter((m, i, a) => a.indexOf(m) === i); // dedupe, preserve order
+  const client = await getClient();
+  let lastErr: unknown;
+  for (const model of chain) {
+    try {
+      const res = await client.messages.create({ ...params, model });
+      if (resolvedModel !== model) {
+        if (resolvedModel) console.warn(`[llm] model "${resolvedModel}" → using "${model}"`);
+        resolvedModel = model;
+      }
+      return res;
+    } catch (err) {
+      if (isModelUnavailable(err)) {
+        console.warn(
+          `[llm] model "${model}" unavailable (retired/not found) — trying next fallback`,
+        );
+        if (resolvedModel === model) resolvedModel = undefined;
+        lastErr = err;
+        continue; // try next model in chain
+      }
+      throw err; // auth / rate-limit / validation / network — surface immediately
+    }
+  }
+  throw new Error(
+    `All Anthropic models failed as unavailable: ${chain.join(', ')}. ` +
+      `Update ANTHROPIC_MODEL / ANTHROPIC_MODEL_FALLBACKS. Last error: ${String(lastErr)}`,
+  );
+}
+
 export interface GenerateOptions {
   system?: string;
   user: string;
@@ -32,9 +95,7 @@ export async function generateText(opts: GenerateOptions): Promise<string> {
   if (!anthropicAvailable()) {
     throw new Error('ANTHROPIC_API_KEY not configured');
   }
-  const client = await getClient();
-  const res = await client.messages.create({
-    model: config().anthropicModel,
+  const res = await createMessage({
     max_tokens: opts.maxTokens ?? 1024,
     temperature: opts.temperature ?? 0.2,
     system: opts.system,
@@ -62,7 +123,6 @@ export async function ocrImagesToMarkdown(
       'OCR of photographed SOPs requires ANTHROPIC_API_KEY (PDF and DOCX ingestion work without it)',
     );
   }
-  const client = await getClient();
   const content: Array<
     | { type: 'image'; source: { type: 'base64'; media_type: VisionMediaType; data: string } }
     | { type: 'text'; text: string }
@@ -75,8 +135,7 @@ export async function ocrImagesToMarkdown(
     },
   }));
   content.push({ type: 'text', text: instruction });
-  const res = await client.messages.create({
-    model: config().anthropicModel,
+  const res = await createMessage({
     max_tokens: 8192,
     temperature: 0,
     messages: [{ role: 'user', content }],

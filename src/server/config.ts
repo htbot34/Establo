@@ -29,7 +29,13 @@ function buildConfig(env: NodeJS.ProcessEnv) {
     databaseUrl: env.DATABASE_URL ?? 'postgres://establo:establo@localhost:5432/establo',
 
     anthropicApiKey: env.ANTHROPIC_API_KEY || undefined,
-    anthropicModel: env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-20250514',
+    anthropicModel: env.ANTHROPIC_MODEL ?? 'claude-haiku-4-5-20251001',
+    // Tried in order if the primary model is ever retired (404). Comma-separated;
+    // trimmed, empties dropped. A dead model auto-falls-back to the next.
+    anthropicModelFallbacks: (env.ANTHROPIC_MODEL_FALLBACKS ?? 'claude-sonnet-4-6,claude-opus-4-8')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
 
     openaiApiKey: env.OPENAI_API_KEY || undefined,
     openaiEmbeddingModel: env.OPENAI_EMBEDDING_MODEL ?? 'text-embedding-3-small',
