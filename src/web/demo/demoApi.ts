@@ -1104,14 +1104,22 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
   if (route === 'POST /api/audit/exports') {
     const start = new Date(`${body.periodStart}T00:00:00Z`);
     const end = new Date(`${body.periodEnd}T23:59:59.999Z`);
-    const inRange = s.events.filter((e) => ts(e.occurredAt) >= start.getTime() && ts(e.occurredAt) <= end.getTime());
+    // Mirror of auditPack.ts: deleted workers are out of every export.
+    const deletedIds = new Set(s.workers.filter((w) => w.deletedAt).map((w) => w.id));
+    const inRange = s.events.filter(
+      (e) =>
+        ts(e.occurredAt) >= start.getTime() &&
+        ts(e.occurredAt) <= end.getTime() &&
+        !deletedIds.has(e.workerId),
+    );
     const esc = (v: unknown) => {
       const str = v === null || v === undefined ? '' : String(v);
       return /[",\n\r]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
     };
     const docTitle = new Map(s.documents.map((d) => [d.id, d.title]));
     const lines = [
-      'event_id,occurred_at_utc,employee,phone,event_type,topic,farm_topic,confidence,question,answer,source_document,consent_status,consent_date_utc,cow_care_agreement,supervisor_sign_off',
+      // Mirror of auditPack.ts: no phone, no confidence — see that file.
+      'event_id,occurred_at_utc,employee,event_type,topic,farm_topic,question,answer,source_document,consent_status,consent_date_utc,cow_care_agreement,supervisor_sign_off',
       ...inRange.map((e) => {
         const w = s.workers.find((w) => w.id === e.workerId);
         const sig = w ? latestSignature(w.id) : null;
@@ -1127,9 +1135,9 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
               .join('; ')
           : '';
         return [
-          e.id, e.occurredAt, w?.name ?? '', w?.phoneE164 ?? '', e.eventType, e.topic,
+          e.id, e.occurredAt, w?.name ?? '', e.eventType, e.topic,
           e.farmTopic ?? 'none',
-          e.confidence ?? '', e.questionText ?? '', e.answerText ?? '',
+          e.questionText ?? '', e.answerText ?? '',
           e.sourceDocumentId ? (docTitle.get(e.sourceDocumentId) ?? '') : '',
           w?.consentStatus ?? '', w?.consentedAt ?? '',
           sig ? `signed v${sig.agreementVersion} ${String(sig.signedAt).slice(0, 10)} via ${sig.method}` : 'unsigned',

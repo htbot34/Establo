@@ -14,6 +14,7 @@ import { buildApp } from '../../src/server/app.js';
 import { closeDb, getDb, type Db } from '../../src/server/db/client.js';
 import { runMigrations } from '../../src/server/db/migrate.js';
 import {
+  auditExports,
   conversations,
   deletionLog,
   escalations,
@@ -26,7 +27,9 @@ import {
   users,
   workers,
 } from '../../src/server/db/schema.js';
+import { auditCsvPath, runAuditExport } from '../../src/server/services/auditPack.js';
 import { enrollWorker, runDripTick } from '../../src/server/services/drip.js';
+import { generateWorkerTranscriptPdf } from '../../src/server/services/transcripts.js';
 import { resetInboundCachesForTests } from '../../src/server/services/inbound.js';
 import { resetRateLimits } from '../../src/server/services/rateLimit.js';
 import { pruneRawContent } from '../../src/server/services/retention.js';
@@ -414,5 +417,82 @@ describe('worker data deletion (BORRAR MIS DATOS)', () => {
     };
     expect(body.dataDeletions.length).toBeGreaterThanOrEqual(1);
     expect(JSON.stringify(body.dataDeletions)).not.toContain('Borrado Por Manager');
+  });
+});
+
+describe('export minimization', () => {
+  it('CSV has no phone/confidence columns; deleted workers are absent from every artifact', async () => {
+    const live = await makeWorker({
+      name: 'Viva Exportada',
+      consentStatus: 'opted_in',
+      lastInboundAt: new Date(),
+      disclosureSentAt: new Date(),
+    });
+    const gone = await makeWorker({
+      name: 'Se Borro Antes',
+      consentStatus: 'opted_in',
+      lastInboundAt: new Date(),
+      disclosureSentAt: new Date(),
+    });
+    await db.insert(trainingEvents).values([
+      {
+        orgId: orgA.id, workerId: live.id, eventType: 'qa_interaction', topic: 'Ordeño',
+        farmTopic: 'none', questionText: 'pregunta exportada', answerText: 'respuesta',
+        confidence: 'grounded',
+      },
+      {
+        orgId: orgA.id, workerId: gone.id, eventType: 'qa_interaction', topic: 'Ordeño',
+        farmTopic: 'none', questionText: 'pregunta del borrado', answerText: 'respuesta',
+        confidence: 'grounded',
+      },
+    ]);
+    await injectInbound(gone.phoneE164, 'BORRAR MIS DATOS');
+    await injectInbound(gone.phoneE164, 'SI BORRAR');
+
+    const [job] = await db
+      .insert(auditExports)
+      .values({
+        orgId: orgA.id,
+        periodStart: new Date(Date.now() - 30 * 86_400_000),
+        periodEnd: new Date(Date.now() + 86_400_000),
+        status: 'pending',
+      })
+      .returning();
+    await runAuditExport(db, job.id);
+    const [done] = await db.select().from(auditExports).where(eq(auditExports.id, job.id));
+    expect(done.status).toBe('ready');
+
+    const csv = await fs.promises.readFile(absPath(auditCsvPath(orgA.id, job.id)), 'utf8');
+    const header = csv.split('\r\n')[0];
+    expect(header).not.toContain('phone');
+    expect(header).not.toContain('confidence');
+    expect(header).not.toContain('source_chunk'); // internal signal, never exported
+    expect(header).toContain('employee');
+    expect(csv).toContain('Viva Exportada');
+    expect(csv).not.toContain(live.phoneE164);
+    expect(csv).not.toContain('Se Borro Antes');
+    expect(csv).not.toContain('Trabajador eliminado');
+    expect(csv).not.toContain('pregunta del borrado');
+
+    const { default: pdfParse } = await import('pdf-parse/lib/pdf-parse.js');
+    const letter = await pdfParse(
+      await fs.promises.readFile(absPath(`${orgA.id}/audit/${job.id}/training-letter.pdf`)),
+    );
+    expect(letter.text).toContain('Viva Exportada');
+    expect(letter.text).not.toContain('Trabajador eliminado');
+  });
+
+  it('per-worker transcript PDFs carry the source but never the confidence signal', async () => {
+    const w = await makeWorker({ name: 'Ana Transcrita', consentStatus: 'opted_in' });
+    await db.insert(trainingEvents).values({
+      orgId: orgA.id, workerId: w.id, eventType: 'qa_interaction', topic: 'Ordeño',
+      farmTopic: 'none', questionText: '¿cuánto pre-dip?', answerText: '30 segundos',
+      confidence: 'grounded',
+    });
+    const buffer = await generateWorkerTranscriptPdf(db, w.id);
+    const { default: pdfParse } = await import('pdf-parse/lib/pdf-parse.js');
+    const parsed = await pdfParse(buffer);
+    expect(parsed.text).toContain('Ana Transcrita');
+    expect(parsed.text).not.toContain('Grounding');
   });
 });

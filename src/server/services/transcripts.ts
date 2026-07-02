@@ -87,12 +87,11 @@ export async function generateWorkerTranscriptPdf(
           ev.answerText.length > 600 ? `${ev.answerText.slice(0, 600)}…` : ev.answerText;
         doc.text(`A: ${answer.replace(/📄/gu, '')}`, { indent: 10 });
       }
-      const meta: string[] = [];
-      if (docTitle) meta.push(`Source: ${docTitle}`);
-      if (ev.confidence) meta.push(`Grounding: ${ev.confidence}`);
-      if (meta.length > 0) {
+      // Only the source title — confidence is an internal retrieval-quality
+      // signal, not something an exported document should carry.
+      if (docTitle) {
         doc.font('Helvetica-Oblique').fontSize(8).fillColor(PDF_COLORS.muted);
-        doc.text(meta.join('  ·  '), { indent: 10 });
+        doc.text(`Source: ${docTitle}`, { indent: 10 });
       }
       doc.moveDown(0.55);
     }
