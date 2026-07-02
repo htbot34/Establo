@@ -501,8 +501,9 @@ function handleInbound(workerId: string, kind: 'text' | 'voice', text: string): 
     case 'question': {
       // Mirror of processInbound: a non-Spanish free-form question gets the
       // Spanish-only nudge (a normal interaction, not an escalation) instead of
-      // running retrieval.
-      if (!looksSpanish(text)) {
+      // running retrieval — unless it hits the forbidden-topic guard, which
+      // must always win (refusal + escalation, in any language).
+      if (!looksSpanish(text) && !matchForbiddenTopic(text)) {
         replyText(ES.spanishOnly);
         logEvent(workerId, {
           eventType: 'qa_interaction',

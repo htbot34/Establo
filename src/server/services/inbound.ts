@@ -26,6 +26,7 @@ import {
 } from './consent.js';
 import { deliverNotifiedModules, findPendingCheck, handleCheckAnswer, ttsVariant } from './drip.js';
 import { mapToFarmTopic } from './farmTopics.js';
+import { matchForbiddenTopic } from './guards.js';
 import { looksSpanish } from './language.js';
 import { ES } from './messages.es.js';
 import { checkRateLimit } from './rateLimit.js';
@@ -364,8 +365,11 @@ export async function processInbound(db: Db, payload: InboundPayload): Promise<v
       // running retrieval (which would return the Spanish "no encontré eso" as
       // if it were a knowledge gap). Logged as a normal interaction, never an
       // escalation. Runs only here, so ALTA/BAJA/ACEPTO/OK/numeric answers are
-      // already handled above and never intercepted.
-      if (!looksSpanish(text)) {
+      // already handled above and never intercepted. Forbidden-topic text is
+      // exempt: it must fall through to answerQuestion(), whose guard refuses
+      // and escalates — otherwise an English "when do you pay me" would get
+      // the language nudge and never reach a human.
+      if (!looksSpanish(text) && !matchForbiddenTopic(text)) {
         await sendToWorker(db, worker.id, { text: ES.spanishOnly, kind: 'reply' });
         await logTrainingEvent(db, {
           orgId: worker.orgId,

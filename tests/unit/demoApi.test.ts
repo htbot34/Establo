@@ -366,6 +366,20 @@ describe('reviewer demo script — retrieval and routing', () => {
     expect(after.length).toBe(before); // a normal interaction, never a knowledge gap
   });
 
+  it.each([
+    ['boss when do you pay me my sueldo'],
+    ['what if ICE comes to the farm'],
+  ])('English forbidden topic "%s" → refusal + escalation, never the language nudge', async (text) => {
+    const before = (await demoFetch('/api/escalations')).length;
+    const reply = await ask(text);
+    expect(reply.bodyText).not.toContain('solo contesto en español');
+    expect(reply.bodyText).toContain('supervisor');
+    expect(reply.bodyText).not.toContain('📄 Fuente');
+    const after = await demoFetch('/api/escalations');
+    expect(after.length).toBe(before + 1);
+    expect(after[0].reason).toContain('Tema restringido');
+  });
+
   it('colostrum question → the 4-litros / 22% Brix chunk', async () => {
     const reply = await ask('¿cuánto calostro le doy a un becerro recién nacido?');
     expect(reply.bodyText).toContain('4 litros');

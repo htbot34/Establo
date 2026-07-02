@@ -722,6 +722,30 @@ describe('cross-tenant isolation for the new tables', () => {
   });
 });
 
+describe('forbidden topics beat the Spanish-only language gate', () => {
+  it.each([
+    ['boss when do you pay me my sueldo'],
+    ['what if ICE comes to the farm'],
+  ])('"%s" → forbidden refusal + escalation, not the language nudge', async (question) => {
+    const w = await makeWorker({
+      consentStatus: 'opted_in',
+      lastInboundAt: new Date(),
+      disclosureSentAt: new Date(),
+    });
+    await injectInbound(w.phoneE164, question);
+
+    const texts = await outboundTexts(w.id);
+    expect(texts.some((t) => t.includes('solo contesto en español'))).toBe(false);
+    expect(texts.some((t) => t.includes('con tu supervisor'))).toBe(true);
+
+    const escRows = await db
+      .select()
+      .from(escalations)
+      .where(and(eq(escalations.workerId, w.id), like(escalations.reason, '%Tema restringido%')));
+    expect(escRows).toHaveLength(1);
+  });
+});
+
 describe('POLICY-SCOPE: open-domain questions are refused, not answered', () => {
   it('refuses "¿quién ganó el mundial?" via the similarity floor (production default)', async () => {
     // Pin the floor to the documented real-embeddings default; the keyless
