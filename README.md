@@ -65,7 +65,7 @@ answers; that is the expected dev setup. Useful commands:
 ```bash
 pnpm ask "¿cuánto tiempo dejo el pre-dip?"   # retrieval+answer smoke test (CLI)
 pnpm eval                                     # run the eval set, print scorecard
-pnpm test                                     # 121 unit + integration tests
+pnpm test                                     # 296 tests (239 unit + 57 integration)
 pnpm sample-image                             # regenerate samples/sop-photo-sample.png
 ```
 
