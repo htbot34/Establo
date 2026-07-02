@@ -60,6 +60,11 @@ function buildConfig(env: NodeJS.ProcessEnv) {
     dripCron: env.DRIP_CRON ?? '*/15 * * * *',
     jobsInline: bool(env.JOBS_INLINE, false),
 
+    // Days to keep RAW message/interaction content (bodies, transcripts,
+    // media, training-event question/answer text). Derived training-
+    // documentation fields are never pruned. See services/retention.ts.
+    rawContentRetentionDays: Number(env.RAW_CONTENT_RETENTION_DAYS ?? 180),
+
     // SMS fallback seam for paused WhatsApp templates (stub transport only).
     smsFallbackEnabled: bool(env.SMS_FALLBACK_ENABLED, false),
 
