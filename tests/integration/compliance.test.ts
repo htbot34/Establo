@@ -417,6 +417,9 @@ describe('supervisor sign-off + FARM audit pack', () => {
   it('owner confirms a completed track; signer name/role/time recorded', async () => {
     signedWorker = await makeWorker({
       name: 'Trabajadora Auditada',
+      // 'general' carries all five FARM CE areas, so the letter's gap flags
+      // (euthanasia, fitness to transport) below stay expected for her role.
+      jobRole: 'general',
       consentStatus: 'opted_in',
       consentedAt: new Date('2026-01-15T12:00:00Z'),
       lastInboundAt: new Date(),
