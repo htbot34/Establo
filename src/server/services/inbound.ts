@@ -16,7 +16,10 @@ import { absPath, saveBuffer } from '../lib/storage.js';
 import { deliverPendingAgreement, recordSignature } from './agreements.js';
 import { answerQuestion } from './answer.js';
 import {
+  DELETION_CONFIRM_WINDOW_MS,
   isAceptoReply,
+  isDeletionConfirm,
+  isDeletionRequest,
   markDisclosureSent,
   needsDisclosure,
   optInWorker,
@@ -35,6 +38,7 @@ import { sendToWorker } from './sendToWorker.js';
 import { synthesizeSpeech, transcribeAudio } from './speech.js';
 import { logTrainingEvent } from './trainingEvents.js';
 import { downloadTwilioMedia, getTransport } from './transport.js';
+import { deleteWorkerData } from './workerDeletion.js';
 
 /** Twilio inbound webhook form fields we care about. */
 export interface InboundPayload {
@@ -232,6 +236,36 @@ export async function processInbound(db: Db, payload: InboundPayload): Promise<v
   const keyword = textKeyword ?? parseConsentKeyword(text);
   if (keyword) {
     await handleConsentKeyword(db, worker, keyword);
+    return;
+  }
+
+  // ── Worker data deletion (BORRAR MIS DATOS): a data right, honored in any
+  // consent state (including opted_out, hence before that early return).
+  // Request → plain-language confirmation; SI BORRAR inside the window →
+  // irreversible redaction. An unconfirmed request quietly expires.
+  if (isDeletionRequest(text)) {
+    await db
+      .update(workers)
+      .set({ deletionRequestedAt: now, updatedAt: now })
+      .where(eq(workers.id, worker.id));
+    await sendToWorker(db, worker.id, { text: ES.deletionConfirmPrompt, kind: 'consent' });
+    return;
+  }
+  if (isDeletionConfirm(text)) {
+    const requestedAt = worker.deletionRequestedAt;
+    if (requestedAt && now.getTime() - requestedAt.getTime() <= DELETION_CONFIRM_WINDOW_MS) {
+      // Confirm to the worker BEFORE the phone is tombstoned (the redaction
+      // then nulls this message's stored body along with everything else).
+      await sendToWorker(db, worker.id, { text: ES.deletionDone, kind: 'consent' });
+      await deleteWorkerData(db, worker.id);
+      return;
+    }
+    // Expired or never requested — re-explain instead of silently deleting.
+    await db
+      .update(workers)
+      .set({ deletionRequestedAt: now, updatedAt: now })
+      .where(eq(workers.id, worker.id));
+    await sendToWorker(db, worker.id, { text: ES.deletionConfirmPrompt, kind: 'consent' });
     return;
   }
 

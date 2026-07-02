@@ -90,6 +90,7 @@ interface WorkerDetailData {
   consentedAt?: string | null;
   consentMethod?: string | null;
   consentAttestedBy?: string | null;
+  deletedAt?: string | null;
   agreementStatus?: AgreementStatus | null;
   enrollments: EnrollmentDetail[];
   events: TrainingEvent[];
@@ -132,6 +133,7 @@ export default function WorkerDetail() {
   const [error, setError] = useState<string | null>(null);
   const [attesting, setAttesting] = useState<null | 'consent' | 'agreement'>(null);
   const [attestName, setAttestName] = useState('');
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -236,6 +238,17 @@ export default function WorkerDetail() {
     }
   }
 
+  async function deleteData() {
+    setError(null);
+    try {
+      await api(`/api/workers/${id}/delete-data`, { method: 'POST', body: {} });
+      setConfirmingDelete(false);
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
   const consent = data.consentStatus ?? 'opted_in';
   const agr = data.agreementStatus;
 
@@ -257,17 +270,29 @@ export default function WorkerDetail() {
           </span>
         }
         actions={
-          <>
-            {!IS_DEMO && (
-              <a href={`/api/workers/${data.id}/transcript.pdf`}>
-                <Button variant="secondary">Download transcript PDF</Button>
-              </a>
-            )}
-            <Button onClick={() => setEnrolling(true)}>Enroll in track</Button>
-          </>
+          data.deletedAt ? undefined : (
+            <>
+              {!IS_DEMO && (
+                <a href={`/api/workers/${data.id}/transcript.pdf`}>
+                  <Button variant="secondary">Download transcript PDF</Button>
+                </a>
+              )}
+              <Button variant="danger" onClick={() => setConfirmingDelete(true)}>
+                Delete worker data
+              </Button>
+              <Button onClick={() => setEnrolling(true)}>Enroll in track</Button>
+            </>
+          )
         }
       />
       <ErrorNote error={error} />
+      {data.deletedAt && (
+        <div className="mb-3 rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
+          This worker's data was permanently deleted on {fmtDate(data.deletedAt)}. Name, phone and
+          message content are gone; the remaining entries below are non-identifying training
+          records (topic, check results, timestamps).
+        </div>
+      )}
       {note && (
         <div className="badge-success mb-3 rounded-md border border-success/25 px-3 py-2 text-sm">
           {note}
@@ -496,6 +521,24 @@ export default function WorkerDetail() {
           </ul>
         )}
       </Card>
+
+      {confirmingDelete && (
+        <Modal title="Delete worker data" onClose={() => setConfirmingDelete(false)}>
+          <ErrorNote error={error} />
+          <p className="mb-3 text-sm text-muted-foreground">
+            This permanently deletes <strong>{data.name}</strong>'s name, phone number and all
+            message content, exactly as if they had texted BORRAR MIS DATOS. Training events keep
+            only their non-identifying documentation fields (topic, check results, timestamps),
+            and the worker is excluded from all future audit exports. This cannot be undone.
+          </p>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setConfirmingDelete(false)}>Cancel</Button>
+            <Button variant="danger" onClick={() => void deleteData()}>
+              Permanently delete
+            </Button>
+          </div>
+        </Modal>
+      )}
 
       {enrolling && (
         <Modal title={`Enroll ${data.name}`} onClose={() => setEnrolling(false)}>

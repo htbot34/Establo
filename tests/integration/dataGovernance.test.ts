@@ -15,12 +15,18 @@ import { closeDb, getDb, type Db } from '../../src/server/db/client.js';
 import { runMigrations } from '../../src/server/db/migrate.js';
 import {
   conversations,
+  deletionLog,
+  escalations,
   messages,
+  moduleDeliveries,
+  modules,
+  onboardingTracks,
   orgs,
   trainingEvents,
   users,
   workers,
 } from '../../src/server/db/schema.js';
+import { enrollWorker, runDripTick } from '../../src/server/services/drip.js';
 import { resetInboundCachesForTests } from '../../src/server/services/inbound.js';
 import { resetRateLimits } from '../../src/server/services/rateLimit.js';
 import { pruneRawContent } from '../../src/server/services/retention.js';
@@ -82,6 +88,18 @@ async function outboundTexts(workerId: string): Promise<string[]> {
     .where(eq(conversations.workerId, workerId))
     .orderBy(messages.createdAt);
   return rows.map((r) => r.body ?? '');
+}
+
+async function ownerSession(): Promise<Record<string, string>> {
+  const login = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { email: 'owner-gov@test.local', password: 'password-gov' },
+  });
+  expect(login.statusCode).toBe(200);
+  const cookieHeader = login.cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+  const csrf = login.cookies.find((c) => c.name === 'establo_csrf')?.value ?? '';
+  return { cookie: cookieHeader, 'x-csrf-token': csrf };
 }
 
 beforeAll(async () => {
@@ -220,5 +238,181 @@ describe('raw-content retention prune (RAW_CONTENT_RETENTION_DAYS)', () => {
     const again = await pruneRawContent(db);
     expect(again.messagesRedacted).toBe(0);
     expect(again.eventsRedacted).toBe(0);
+  });
+});
+
+describe('worker data deletion (BORRAR MIS DATOS)', () => {
+  it('request → confirm → irreversible redaction, with training stubs surviving', async () => {
+    const w = await makeWorker({
+      name: 'Elena Prueba',
+      consentStatus: 'opted_in',
+      lastInboundAt: new Date(),
+      disclosureSentAt: new Date(),
+    });
+    const phoneBefore = w.phoneE164;
+
+    // A real interaction first, so there is content to redact (no SOPs in
+    // this org → not_found → escalation row with the verbatim question).
+    await injectInbound(w.phoneE164, '¿cuánto tiempo dejo el pre-dip?');
+
+    await injectInbound(w.phoneE164, 'BORRAR MIS DATOS');
+    const texts = await outboundTexts(w.id);
+    expect(texts.some((t) => t.includes('SI BORRAR'))).toBe(true);
+    const [pending] = await db.select().from(workers).where(eq(workers.id, w.id));
+    expect(pending.deletionRequestedAt).not.toBeNull();
+    expect(pending.deletedAt).toBeNull(); // nothing deleted without the confirm
+
+    await injectInbound(w.phoneE164, 'SI BORRAR');
+    const [after] = await db.select().from(workers).where(eq(workers.id, w.id));
+    expect(after.deletedAt).not.toBeNull();
+    expect(after.name).toBe('Trabajador eliminado');
+    expect(after.phoneE164).toMatch(/^deleted:/);
+    expect(after.status).toBe('inactive');
+
+    // Every message body/transcript is gone.
+    const convRows = await db
+      .select({ msg: messages })
+      .from(messages)
+      .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+      .where(eq(conversations.workerId, w.id));
+    expect(convRows.length).toBeGreaterThan(0);
+    for (const { msg } of convRows) {
+      expect(msg.bodyText).toBeNull();
+      expect(msg.transcriptText).toBeNull();
+      expect(msg.mediaUrl).toBeNull();
+      expect(msg.audioReplyUrl).toBeNull();
+    }
+
+    // Training events keep only the derived documentation fields.
+    const events = await db
+      .select()
+      .from(trainingEvents)
+      .where(eq(trainingEvents.workerId, w.id));
+    expect(events.length).toBeGreaterThan(0);
+    for (const ev of events) {
+      expect(ev.questionText).toBeNull();
+      expect(ev.answerText).toBeNull();
+      expect(ev.topic).toBeTruthy();
+      expect(ev.occurredAt).toBeInstanceOf(Date);
+    }
+
+    // Escalation text carries the neutral marker, not the worker's words.
+    const escRows = await db.select().from(escalations).where(eq(escalations.workerId, w.id));
+    for (const esc of escRows) {
+      expect(esc.questionText).toBe('Eliminado a petición del trabajador');
+    }
+
+    // The audit trail records only THAT it happened (org + timestamp).
+    const logRows = await db.select().from(deletionLog).where(eq(deletionLog.orgId, orgA.id));
+    expect(logRows.length).toBeGreaterThanOrEqual(1);
+
+    // A later message from the old phone is now an unregistered number.
+    const before = (await outboundTexts(w.id)).length;
+    await injectInbound(phoneBefore, 'hola');
+    expect((await outboundTexts(w.id)).length).toBe(before);
+  });
+
+  it('an unconfirmed request expires: SI BORRAR after the window re-prompts instead of deleting', async () => {
+    const w = await makeWorker({ consentStatus: 'opted_in', lastInboundAt: new Date(), disclosureSentAt: new Date() });
+    await injectInbound(w.phoneE164, 'borrar mis datos');
+    await db
+      .update(workers)
+      .set({ deletionRequestedAt: new Date(Date.now() - 25 * 3600_000) })
+      .where(eq(workers.id, w.id));
+
+    await injectInbound(w.phoneE164, 'SI BORRAR');
+    const [after] = await db.select().from(workers).where(eq(workers.id, w.id));
+    expect(after.deletedAt).toBeNull();
+    expect(after.name).not.toBe('Trabajador eliminado');
+    // …and the flow re-armed with a fresh prompt.
+    const texts = await outboundTexts(w.id);
+    expect(texts.filter((t) => t.includes('SI BORRAR')).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('tombstone phones never collide: two deletions in one org satisfy the unique index', async () => {
+    const w1 = await makeWorker({ consentStatus: 'opted_in', lastInboundAt: new Date(), disclosureSentAt: new Date() });
+    const w2 = await makeWorker({ consentStatus: 'opted_in', lastInboundAt: new Date(), disclosureSentAt: new Date() });
+    for (const w of [w1, w2]) {
+      await injectInbound(w.phoneE164, 'BORRAR MIS DATOS');
+      await injectInbound(w.phoneE164, 'SI BORRAR');
+    }
+    const rows = await db.select().from(workers).where(eq(workers.name, 'Trabajador eliminado'));
+    const tombstones = rows.map((r) => r.phoneE164);
+    expect(new Set(tombstones).size).toBe(tombstones.length);
+  });
+
+  it('a deleted worker is excluded from drip sends', async () => {
+    const [track] = await db
+      .insert(onboardingTracks)
+      .values({ orgId: orgA.id, name: 'Track de gobernanza' })
+      .returning();
+    await db.insert(modules).values({
+      trackId: track.id, orgId: orgA.id, orderIndex: 0, dayOffset: 0, sendHourLocal: 7,
+      title: 'Lección', bodyEs: 'Cuerpo.', checkQuestionEs: '¿Listo?',
+      checkOptionsEs: ['Sí', 'No', 'Tal vez'], checkCorrectIndex: 0,
+    });
+    const w = await makeWorker({ consentStatus: 'opted_in', lastInboundAt: new Date(), disclosureSentAt: new Date() });
+    const { enrollmentId } = await enrollWorker(db, { workerId: w.id, trackId: track.id });
+    await db
+      .update(moduleDeliveries)
+      .set({ scheduledFor: new Date(Date.now() - 60_000) })
+      .where(eq(moduleDeliveries.enrollmentId, enrollmentId));
+
+    await injectInbound(w.phoneE164, 'BORRAR MIS DATOS');
+    await injectInbound(w.phoneE164, 'SI BORRAR');
+
+    await runDripTick(db);
+    const [delivery] = await db
+      .select()
+      .from(moduleDeliveries)
+      .where(eq(moduleDeliveries.enrollmentId, enrollmentId));
+    expect(delivery.status).toBe('pending'); // never sent
+  });
+
+  it('the manager dashboard action runs the same redaction; deleted records are immutable', async () => {
+    const w = await makeWorker({ name: 'Borrado Por Manager', notes: 'nota sensible' });
+    const headers = await ownerSession();
+
+    const del = await app.inject({
+      method: 'POST',
+      url: `/api/workers/${w.id}/delete-data`,
+      headers,
+      payload: {},
+    });
+    expect(del.statusCode).toBe(200);
+    const [after] = await db.select().from(workers).where(eq(workers.id, w.id));
+    expect(after.deletedAt).not.toBeNull();
+    expect(after.name).toBe('Trabajador eliminado');
+    expect(after.notes).toBeNull();
+
+    // Second delete → 409; edits → 404; transcript → 410.
+    const again = await app.inject({
+      method: 'POST',
+      url: `/api/workers/${w.id}/delete-data`,
+      headers,
+      payload: {},
+    });
+    expect(again.statusCode).toBe(409);
+    const patch = await app.inject({
+      method: 'PATCH',
+      url: `/api/workers/${w.id}`,
+      headers,
+      payload: { name: 'Renombrado' },
+    });
+    expect(patch.statusCode).toBe(404);
+    const pdf = await app.inject({
+      method: 'GET',
+      url: `/api/workers/${w.id}/transcript.pdf`,
+      headers,
+    });
+    expect(pdf.statusCode).toBe(410);
+
+    // The overview shows a non-identifying notice.
+    const overview = await app.inject({ method: 'GET', url: '/api/overview', headers });
+    const body = JSON.parse(overview.body) as {
+      dataDeletions: Array<{ id: string; deletedAt: string }>;
+    };
+    expect(body.dataDeletions.length).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(body.dataDeletions)).not.toContain('Borrado Por Manager');
   });
 });

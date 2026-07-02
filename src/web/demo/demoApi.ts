@@ -12,7 +12,10 @@
 import { ApiError } from '../api';
 import { ES } from '../../server/services/messages.es';
 import {
+  DELETION_CONFIRM_WINDOW_MS,
   isAceptoReply,
+  isDeletionConfirm,
+  isDeletionRequest,
   parseConsentKeyword,
   renewalDue,
 } from '../../server/services/consentKeywords';
@@ -48,6 +51,7 @@ interface Store {
   agreements: Row[];
   signatures: Row[];
   exports: Row[];
+  deletions: Row[];
 }
 
 const fixture = fixtureJson as unknown as Omit<Store, 'authed' | 'exports'>;
@@ -62,6 +66,7 @@ function db(): Store {
       agreements: data.agreements ?? [],
       signatures: data.signatures ?? [],
       exports: [],
+      deletions: [],
     };
   }
   return store;
@@ -249,6 +254,40 @@ function firstName(name: string): string {
   return name.split(/\s+/)[0] ?? name;
 }
 
+// Mirror of services/workerDeletion.ts: irreversible in-memory redaction.
+function redactWorkerData(workerId: string): void {
+  const s = db();
+  const worker = s.workers.find((w) => w.id === workerId);
+  if (!worker || worker.deletedAt) return;
+  const convIds = new Set(s.conversations.filter((c) => c.workerId === workerId).map((c) => c.id));
+  for (const m of s.messages) {
+    if (!convIds.has(m.conversationId)) continue;
+    m.bodyText = null;
+    m.transcriptText = null;
+    m.mediaUrl = null;
+    m.audioReplyUrl = null;
+  }
+  for (const e of s.events) {
+    if (e.workerId !== workerId) continue;
+    e.questionText = null;
+    e.answerText = null;
+  }
+  for (const esc of s.escalations) {
+    if (esc.workerId === workerId) esc.questionText = 'Eliminado a petición del trabajador';
+  }
+  worker.name = 'Trabajador eliminado';
+  worker.phoneE164 = `deleted:${uuid()}`;
+  worker.notes = null;
+  worker.status = 'inactive';
+  worker.consentStatus = 'opted_out';
+  worker.deletedAt = nowIso();
+  worker.deletionRequestedAt = null;
+  worker.pendingAgreementId = null;
+  worker.pendingAgreementSentAt = null;
+  worker.pendingAgreementNudges = 0;
+  s.deletions.push({ id: uuid(), orgId: s.org.id, createdAt: nowIso() });
+}
+
 // ── drip engine mirror ───────────────────────────────────────────────────────
 function deliverModule(delivery: Row): boolean {
   const s = db();
@@ -411,6 +450,24 @@ function handleInbound(workerId: string, kind: 'text' | 'voice', text: string): 
     pushMessage(workerId, { direction: 'outbound', type: 'text', bodyText: ES.optInConfirm });
     return;
   }
+  // ── Worker data deletion (BORRAR MIS DATOS) — honored in any consent state ──
+  if (isDeletionRequest(text)) {
+    worker.deletionRequestedAt = nowIso();
+    pushMessage(workerId, { direction: 'outbound', type: 'text', bodyText: ES.deletionConfirmPrompt });
+    return;
+  }
+  if (isDeletionConfirm(text)) {
+    const requestedAt = worker.deletionRequestedAt ? new Date(worker.deletionRequestedAt).getTime() : 0;
+    if (requestedAt && Date.now() - requestedAt <= DELETION_CONFIRM_WINDOW_MS) {
+      pushMessage(workerId, { direction: 'outbound', type: 'text', bodyText: ES.deletionDone });
+      redactWorkerData(workerId);
+      return;
+    }
+    worker.deletionRequestedAt = nowIso();
+    pushMessage(workerId, { direction: 'outbound', type: 'text', bodyText: ES.deletionConfirmPrompt });
+    return;
+  }
+
   if (worker.consentStatus === 'opted_out') {
     pushMessage(workerId, { direction: 'outbound', type: 'text', bodyText: ES.optedOutReminder });
     return;
@@ -668,6 +725,10 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
     }
     return {
       activeWorkers: s.workers.filter((w) => w.status === 'active').length,
+      dataDeletions: [...s.deletions]
+        .sort((a, b) => ts(b.createdAt) - ts(a.createdAt))
+        .slice(0, 5)
+        .map((d) => ({ id: d.id, deletedAt: d.createdAt })),
       questionsThisWeek: s.events.filter((e) => e.eventType === 'qa_interaction' && ts(e.occurredAt) > weekAgo).length,
       modulesDeliveredThisWeek: s.events.filter((e) => e.eventType === 'module_delivered' && ts(e.occurredAt) > weekAgo).length,
       openKnowledgeGaps: s.escalations.filter((e) => e.status === 'open').length,
@@ -788,6 +849,12 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
       });
     }
     return { enrollmentId: enr.id, created: true };
+  }
+  if (seg[1] === 'workers' && seg[2] && seg[3] === 'delete-data' && method === 'POST') {
+    const worker = s.workers.find((w) => w.id === seg[2]) ?? fail(404, 'Worker not found');
+    if (worker.deletedAt) fail(409, 'Worker data was already deleted');
+    redactWorkerData(worker.id);
+    return { ok: true };
   }
   if (seg[1] === 'workers' && seg[2] && !seg[3] && method === 'GET') {
     const worker = s.workers.find((w) => w.id === seg[2]) ?? fail(404, 'Worker not found');

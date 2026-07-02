@@ -88,6 +88,11 @@ export const workers = pgTable(
     pendingAgreementId: uuid('pending_agreement_id'),
     pendingAgreementSentAt: timestamp('pending_agreement_sent_at', { withTimezone: true }),
     pendingAgreementNudges: integer('pending_agreement_nudges').notNull().default(0),
+    // Worker data deletion (BORRAR MIS DATOS): deletion_requested_at is the
+    // pending-confirmation state; deleted_at marks an irreversibly redacted
+    // record (name/phone tombstoned, raw content nulled).
+    deletionRequestedAt: timestamp('deletion_requested_at', { withTimezone: true }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -455,6 +460,24 @@ export const auditExports = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index('audit_exports_org_idx').on(t.orgId)],
+);
+
+/**
+ * Records only THAT a worker-data deletion happened (timestamp + org) — no
+ * worker-identifying columns, on purpose: the dashboard notice built from
+ * this must never let a manager infer which worker deleted their data.
+ */
+export const deletionLog = pgTable(
+  'deletion_log',
+  {
+    id: id(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('deletion_log_org_idx').on(t.orgId, t.createdAt)],
 );
 
 export const webhookLogs = pgTable('webhook_logs', {

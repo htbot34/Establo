@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
-import { and, asc, count, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { requireAuth } from '../auth/session.js';
 import { getDb } from '../db/client.js';
@@ -10,6 +10,7 @@ import {
   agreementSignatures,
   auditExports,
   conversations,
+  deletionLog,
   enrollments,
   escalations,
   FARM_TOPICS,
@@ -45,6 +46,7 @@ import { anthropicAvailable, extractJson, generateText } from '../services/llm.j
 import { isValidVideoUrl, parseVideoUrl } from '../services/video.js';
 import { resumeTemplateSends } from '../services/templateHealth.js';
 import { generateWorkerTranscriptPdf } from '../services/transcripts.js';
+import { deleteWorkerData } from '../services/workerDeletion.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MODULES_PROMPT = path.resolve(__dirname, '../../../prompts/modules.es.md');
@@ -130,11 +132,22 @@ export function registerApiRoutes(app: FastifyInstance): void {
       .orderBy(desc(escalations.createdAt))
       .limit(6);
 
+    // Worker-data deletions, as non-identifying notices (timestamp only) so a
+    // drop in training counts is never mysterious — and never traceable to a
+    // specific worker.
+    const deletionNotices = await db
+      .select({ id: deletionLog.id, deletedAt: deletionLog.createdAt })
+      .from(deletionLog)
+      .where(eq(deletionLog.orgId, orgId))
+      .orderBy(desc(deletionLog.createdAt))
+      .limit(5);
+
     return {
       activeWorkers: Number(activeWorkers.n),
       questionsThisWeek: Number(questionsWeek.n),
       modulesDeliveredThisWeek: Number(modulesWeek.n),
       openKnowledgeGaps: Number(openGaps.n),
+      dataDeletions: deletionNotices,
       sparkline,
       recentEscalations: recentEscalations.map((r) => ({
         id: r.esc.id,
@@ -398,13 +411,38 @@ export function registerApiRoutes(app: FastifyInstance): void {
       return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
     }
     const db = getDb();
+    // A deleted (redacted) worker record is immutable.
     const [row] = await db
       .update(workers)
       .set({ ...parsed.data, updatedAt: new Date() })
-      .where(and(eq(workers.id, req.params.id), eq(workers.orgId, req.authOrg!.id)))
+      .where(
+        and(
+          eq(workers.id, req.params.id),
+          eq(workers.orgId, req.authOrg!.id),
+          isNull(workers.deletedAt),
+        ),
+      )
       .returning();
     if (!row) return reply.code(404).send({ error: 'Worker not found' });
     return row;
+  });
+
+  /**
+   * Manager-side "Delete worker data" — the same irreversible redaction the
+   * worker triggers with BORRAR MIS DATOS on WhatsApp.
+   */
+  app.post<{ Params: { id: string } }>('/api/workers/:id/delete-data', async (req, reply) => {
+    const db = getDb();
+    const [worker] = await db
+      .select()
+      .from(workers)
+      .where(and(eq(workers.id, req.params.id), eq(workers.orgId, req.authOrg!.id)));
+    if (!worker) return reply.code(404).send({ error: 'Worker not found' });
+    if (worker.deletedAt) {
+      return reply.code(409).send({ error: 'Worker data was already deleted' });
+    }
+    await deleteWorkerData(db, worker.id);
+    return { ok: true };
   });
 
   app.get<{ Params: { id: string } }>('/api/workers/:id', async (req, reply) => {
@@ -490,6 +528,9 @@ export function registerApiRoutes(app: FastifyInstance): void {
       .from(workers)
       .where(and(eq(workers.id, req.params.id), eq(workers.orgId, req.authOrg!.id)));
     if (!worker) return reply.code(404).send({ error: 'Worker not found' });
+    if (worker.deletedAt) {
+      return reply.code(410).send({ error: 'This worker\'s data was deleted at their request' });
+    }
     if (worker.consentStatus === 'opted_out') {
       return reply.code(409).send({
         error:
@@ -528,6 +569,9 @@ export function registerApiRoutes(app: FastifyInstance): void {
       .from(workers)
       .where(and(eq(workers.id, req.params.id), eq(workers.orgId, req.authOrg!.id)));
     if (!worker) return reply.code(404).send({ error: 'Worker not found' });
+    if (worker.deletedAt) {
+      return reply.code(410).send({ error: 'This worker\'s data was deleted at their request' });
+    }
     const outcome = await requestAgreementSignature(db, worker.id);
     if (outcome === 'blocked') {
       return reply.code(409).send({
@@ -548,6 +592,9 @@ export function registerApiRoutes(app: FastifyInstance): void {
       .from(workers)
       .where(and(eq(workers.id, req.params.id), eq(workers.orgId, req.authOrg!.id)));
     if (!worker) return reply.code(404).send({ error: 'Worker not found' });
+    if (worker.deletedAt) {
+      return reply.code(410).send({ error: 'This worker\'s data was deleted at their request' });
+    }
     const agreement = await getOrCreateActiveAgreement(db, worker.orgId);
     const sig = await recordSignature(db, {
       orgId: worker.orgId,
@@ -614,6 +661,9 @@ export function registerApiRoutes(app: FastifyInstance): void {
       .from(workers)
       .where(and(eq(workers.id, req.params.id), eq(workers.orgId, orgId)));
     if (!worker) return reply.code(404).send({ error: 'Worker not found' });
+    if (worker.deletedAt) {
+      return reply.code(410).send({ error: 'This worker\'s data was deleted at their request' });
+    }
     const [track] = await db
       .select()
       .from(onboardingTracks)
@@ -630,6 +680,9 @@ export function registerApiRoutes(app: FastifyInstance): void {
       .from(workers)
       .where(and(eq(workers.id, req.params.id), eq(workers.orgId, req.authOrg!.id)));
     if (!worker) return reply.code(404).send({ error: 'Worker not found' });
+    if (worker.deletedAt) {
+      return reply.code(410).send({ error: 'This worker\'s data was deleted at their request' });
+    }
     const buffer = await generateWorkerTranscriptPdf(db, worker.id);
     const safe = worker.name.replace(/[^a-zA-Z0-9]+/g, '-');
     return reply

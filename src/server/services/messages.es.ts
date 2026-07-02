@@ -91,6 +91,17 @@ export const ES = {
   agreementSigned: (version: number) =>
     `✅ ¡Gracias! Tu firma quedó registrada (acuerdo v${version}). ` +
     'Tu supervisor ya la puede ver.',
+
+  /** BORRAR MIS DATOS: plain-language confirmation before an irreversible deletion. */
+  deletionConfirmPrompt:
+    'Quieres borrar tus datos. Esto borra tu nombre, tu teléfono y todos tus mensajes. ' +
+    'Tus lecciones quedan solo como números, sin tus palabras. ' +
+    'No se puede deshacer, y este número ya no te va a contestar. ' +
+    'Si estás seguro, responde SI BORRAR. Si no, no respondas nada y todo sigue igual.',
+
+  deletionDone:
+    'Listo. Ya borramos tu nombre, tu teléfono y tus mensajes. ' +
+    'Este número ya no te va a contestar. Gracias. 🙏',
 } as const;
 
 /**
