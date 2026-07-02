@@ -4,6 +4,7 @@
  * login/setup failure throttle, and the login timing-oracle mitigation
  * (behavioral part only; the timing itself isn't asserted).
  */
+import { createHmac } from 'node:crypto';
 import argon2 from 'argon2';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -182,5 +183,44 @@ describe('auth failure throttling (per IP, failures only)', () => {
       payload: setupPayload('guess@test.local', { setupToken: SETUP_TOKEN }),
     });
     expect(blocked.statusCode).toBe(429);
+  });
+});
+
+describe('Stripe webhook replay protection', () => {
+  const STRIPE_SECRET = 'whsec_test_secret';
+
+  function signedRequest(timestampSeconds: number) {
+    const raw = JSON.stringify({ type: 'noop.event', data: { object: {} } });
+    const sig = createHmac('sha256', STRIPE_SECRET)
+      .update(`${timestampSeconds}.${raw}`)
+      .digest('hex');
+    return app.inject({
+      method: 'POST',
+      url: '/webhooks/stripe',
+      headers: {
+        'content-type': 'application/json',
+        'stripe-signature': `t=${timestampSeconds},v1=${sig}`,
+      },
+      payload: raw,
+    });
+  }
+
+  it('rejects correctly-signed events older than 5 minutes; accepts fresh ones', async () => {
+    process.env.ENABLE_BILLING = 'true';
+    process.env.STRIPE_WEBHOOK_SECRET = STRIPE_SECRET;
+    resetConfigForTests();
+    try {
+      const stale = await signedRequest(Math.floor(Date.now() / 1000) - 6 * 60);
+      expect(stale.statusCode).toBe(400);
+      expect(JSON.parse(stale.body).error).toContain('Stale');
+
+      const fresh = await signedRequest(Math.floor(Date.now() / 1000));
+      expect(fresh.statusCode).toBe(200);
+      expect(JSON.parse(fresh.body)).toEqual({ received: true });
+    } finally {
+      delete process.env.ENABLE_BILLING;
+      delete process.env.STRIPE_WEBHOOK_SECRET;
+      resetConfigForTests();
+    }
   });
 });
