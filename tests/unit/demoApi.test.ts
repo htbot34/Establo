@@ -366,6 +366,31 @@ describe('reviewer demo script — retrieval and routing', () => {
     expect(after.length).toBe(before); // a normal interaction, never a knowledge gap
   });
 
+  it('immigration questions store only the category marker; sueldo questions stay verbatim', async () => {
+    // Immigration → redacted in every employer-visible record.
+    await ask('que hago si llega la migra al establo');
+    let esc = await demoFetch('/api/escalations');
+    expect(esc[0].questionText).toBe('Tema restringido: migración');
+    expect(esc[0].questionText).not.toContain('establo');
+    const maria = await workerByName('María');
+    let detail = await demoFetch(`/api/workers/${maria.id}`);
+    const immigrationEvents = detail.events.filter(
+      (e: { questionText: string | null }) => e.questionText?.includes('llega'),
+    );
+    expect(immigrationEvents).toHaveLength(0);
+
+    // Employment → verbatim (deliberately not redacted).
+    const sueldo = '¿me puedes subir el sueldo este mes?';
+    await ask(sueldo);
+    esc = await demoFetch('/api/escalations');
+    expect(esc.some((e: { questionText: string }) => e.questionText === sueldo)).toBe(true);
+    detail = await demoFetch(`/api/workers/${maria.id}`);
+    const sueldoEvents = detail.events.filter(
+      (e: { questionText: string | null }) => e.questionText === sueldo,
+    );
+    expect(sueldoEvents.length).toBeGreaterThanOrEqual(2); // qa_interaction + escalation
+  });
+
   it.each([
     ['boss when do you pay me my sueldo'],
     ['what if ICE comes to the farm'],

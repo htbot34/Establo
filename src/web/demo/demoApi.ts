@@ -517,15 +517,21 @@ function handleInbound(workerId: string, kind: 'text' | 'voice', text: string): 
       const guard = matchForbiddenTopic(text);
       if (guard) {
         replyText(ES.forbidden);
+        // Mirror of processInbound: immigration/legal guard hits store only a
+        // category marker in employer-visible records, never the exact words.
+        const recordedQuestion =
+          guard.category === 'immigration' || guard.category === 'legal'
+            ? `Tema restringido: ${guard.category === 'immigration' ? 'migración' : 'legal'}`
+            : text;
         logEvent(workerId, {
           eventType: 'qa_interaction',
           topic: guard.topic,
-          questionText: text,
+          questionText: recordedQuestion,
           answerText: ES.forbidden,
           confidence: 'not_found',
         });
-        addEscalation(workerId, text, 'Tema restringido (sueldo/legal/migración/dosis)');
-        logEvent(workerId, { eventType: 'escalation', topic: guard.topic, questionText: text, confidence: 'not_found' });
+        addEscalation(workerId, recordedQuestion, 'Tema restringido (sueldo/legal/migración/dosis)');
+        logEvent(workerId, { eventType: 'escalation', topic: guard.topic, questionText: recordedQuestion, confidence: 'not_found' });
         return;
       }
       const hit = retrieve(text);

@@ -26,6 +26,7 @@ import {
   onboardingTracks,
   orgs,
   sopDocuments,
+  trainingEvents,
   users,
   workers,
 } from '../../src/server/db/schema.js';
@@ -778,6 +779,60 @@ describe('forbidden topics beat the Spanish-only language gate', () => {
       .from(escalations)
       .where(and(eq(escalations.workerId, w.id), like(escalations.reason, '%Tema restringido%')));
     expect(escRows).toHaveLength(1);
+  });
+});
+
+describe('immigration/legal escalations are redacted in employer-visible records', () => {
+  it('an immigration question stores only a category marker in all three write sites', async () => {
+    const w = await makeWorker({
+      consentStatus: 'opted_in',
+      lastInboundAt: new Date(),
+      disclosureSentAt: new Date(),
+    });
+    const question = 'que hago si llega ICE al establo';
+    await injectInbound(w.phoneE164, question);
+
+    const [esc] = await db.select().from(escalations).where(eq(escalations.workerId, w.id));
+    const events = await db
+      .select()
+      .from(trainingEvents)
+      .where(eq(trainingEvents.workerId, w.id));
+    const qa = events.find((e) => e.eventType === 'qa_interaction');
+    const escEvent = events.find((e) => e.eventType === 'escalation');
+
+    for (const stored of [esc.questionText, qa!.questionText, escEvent!.questionText]) {
+      expect(stored).toBe('Tema restringido: migración');
+      // No distinctive word of the worker's message survives anywhere.
+      for (const word of ['llega', 'ice', 'ICE', 'establo']) {
+        expect(stored).not.toContain(word);
+      }
+    }
+    // The worker still got the refusal and a human was still alerted.
+    expect(esc.reason).toContain('Tema restringido');
+    const texts = await outboundTexts(w.id);
+    expect(texts.some((t) => t.includes('con tu supervisor'))).toBe(true);
+  });
+
+  it('an employment (sueldo) question stays verbatim in all three — no over-redaction', async () => {
+    const w = await makeWorker({
+      consentStatus: 'opted_in',
+      lastInboundAt: new Date(),
+      disclosureSentAt: new Date(),
+    });
+    const question = '¿me puedes subir el sueldo este mes?';
+    await injectInbound(w.phoneE164, question);
+
+    const [esc] = await db.select().from(escalations).where(eq(escalations.workerId, w.id));
+    const events = await db
+      .select()
+      .from(trainingEvents)
+      .where(eq(trainingEvents.workerId, w.id));
+    const qa = events.find((e) => e.eventType === 'qa_interaction');
+    const escEvent = events.find((e) => e.eventType === 'escalation');
+
+    expect(esc.questionText).toBe(question);
+    expect(qa!.questionText).toBe(question);
+    expect(escEvent!.questionText).toBe(question);
   });
 });
 

@@ -404,6 +404,20 @@ export async function processInbound(db: Db, payload: InboundPayload): Promise<v
         kind: 'reply',
       });
 
+      // Immigration/legal guard hits: the worker's exact words never enter
+      // employer-visible records (the escalation row, both training events,
+      // and therefore the audit-pack CSV) — only a category marker does.
+      // Employment and medical_dosing stay verbatim on purpose: a wage or
+      // dosing question is not the same risk class as a worker revealing
+      // fear about their status.
+      const redactCategory =
+        result.forbiddenCategory === 'immigration' || result.forbiddenCategory === 'legal'
+          ? result.forbiddenCategory
+          : null;
+      const recordedQuestion = redactCategory
+        ? `Tema restringido: ${redactCategory === 'immigration' ? 'migración' : 'legal'}`
+        : text;
+
       const farmTopic = mapToFarmTopic(result.topic, text);
       await logTrainingEvent(db, {
         orgId: worker.orgId,
@@ -411,7 +425,7 @@ export async function processInbound(db: Db, payload: InboundPayload): Promise<v
         eventType: 'qa_interaction',
         topic: result.topic,
         farmTopic,
-        questionText: text,
+        questionText: recordedQuestion,
         answerText: result.text,
         sourceDocumentId: result.sourceDocumentId,
         sourceChunkIds: result.sourceChunkIds.length > 0 ? result.sourceChunkIds : null,
@@ -422,7 +436,7 @@ export async function processInbound(db: Db, payload: InboundPayload): Promise<v
         await db.insert(escalations).values({
           orgId: worker.orgId,
           workerId: worker.id,
-          questionText: text,
+          questionText: recordedQuestion,
           reason: result.forbidden
             ? 'Tema restringido (sueldo/legal/migración/dosis)'
             : 'No encontrado en los SOPs',
@@ -433,7 +447,7 @@ export async function processInbound(db: Db, payload: InboundPayload): Promise<v
           eventType: 'escalation',
           topic: result.topic,
           farmTopic,
-          questionText: text,
+          questionText: recordedQuestion,
           confidence: 'not_found',
         });
       }

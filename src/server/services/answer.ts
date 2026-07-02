@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Db } from '../db/client.js';
 import { retrievalMinSimilarity } from './embeddings.js';
-import { matchForbiddenTopic } from './guards.js';
+import { matchForbiddenTopic, type ForbiddenCategory } from './guards.js';
 import { anthropicAvailable, generateText } from './llm.js';
 import { ES } from './messages.es.js';
 import { retrieveChunks, type RetrievedChunk } from './retrieval.js';
@@ -24,6 +24,12 @@ export interface AnswerResult {
   usedStub: boolean;
   /** Hit the hard guard (salary/legal/immigration/vet-dosing) — caller must escalate. */
   forbidden: boolean;
+  /**
+   * Which guard category fired (null when not forbidden). Two categories map
+   * to the same topic ('Otro'), so callers that must treat immigration/legal
+   * differently (employer-visible redaction) need the category itself.
+   */
+  forbiddenCategory: ForbiddenCategory | null;
 }
 
 let cachedSystemPrompt: string | undefined;
@@ -74,6 +80,7 @@ function notFoundResult(question: string, best: number | null): AnswerResult {
     bestSimilarity: best,
     usedStub: !anthropicAvailable(),
     forbidden: false,
+    forbiddenCategory: null,
   };
 }
 
@@ -99,6 +106,7 @@ export async function answerQuestion(
       bestSimilarity: null,
       usedStub: !anthropicAvailable(),
       forbidden: true,
+      forbiddenCategory: guard.category,
     };
   }
 
@@ -120,6 +128,7 @@ export async function answerQuestion(
       bestSimilarity: best,
       usedStub: true,
       forbidden: false,
+      forbiddenCategory: null,
     };
   }
 
@@ -146,6 +155,7 @@ export async function answerQuestion(
       bestSimilarity: best,
       usedStub: false,
       forbidden: false,
+      forbiddenCategory: null,
     };
   }
 
@@ -158,5 +168,6 @@ export async function answerQuestion(
     bestSimilarity: best,
     usedStub: false,
     forbidden: false,
+    forbiddenCategory: null,
   };
 }
