@@ -353,3 +353,105 @@ present it pre-renders real OGG/Opus lesson audio (reusing `synthesizeSpeech` +
 entry exists and falls back to the placeholder otherwise. With no key the
 manifest stays empty and behavior is identical to before — the production
 WhatsApp path is unchanged (it already synthesizes real TTS).
+
+## Hardening pass — safety, data governance, security (July 2026)
+
+Merged output of two independent red-team passes (one against the code, one
+against the 2026 market/regulatory context). Ordering mattered: the schema
+change (org-scoped phones) landed before the deletion feature built on it,
+and the worker-facing disclosure and DATA-POLICY.md were written last so
+every claim in them was already true of shipped code.
+
+- **Guard hardening.** The pre-LLM `RULES` were extended across all four
+  categories for real adversarial phrasing (la migra, deport*, standalone
+  ICE, redadas, ilegal/indocumentad*; cheque/quincena/raya and pay-scoped
+  earn-verbs; denuncia/acoso/queja/scoped derechos; vacuna/pastilla/le
+  inyecto). Every addition was checked against real dairy vocabulary that
+  sits one character away: "el corte" (silage) vs "la corte" (court, the
+  only form added), "ganado" (cattle) vs "gano" (earnings), "acostada"
+  (downed cow) vs "acosa", "vacuno" (bovine) vs "vacuna". A new unit table
+  pins ~40 must-refuse phrasings and the must-not-match dairy set, because a
+  false positive here converts a legitimate training question into a refusal.
+- **Language gate ordering.** The Spanish-only nudge returned before
+  `answerQuestion()` ran, so forbidden topics in English never reached the
+  guard or a human. Fixed with an exemption in the gate condition rather than
+  duplicating the guard-and-escalate logic in `inbound.ts` — one escalation
+  code path, not two that drift.
+- **Org-scoped phone uniqueness.** Workers move between co-op-affiliated
+  dairies and consultants demo with one phone across org accounts, so
+  `workers_phone_uq` became `(org_id, phone_e164)`. The duplicate pre-check
+  is org-scoped too — the old global 409 doubled as a cross-org existence
+  oracle. The inbound resolver picks deterministically (most recent inbound,
+  else newest) when one number is active at two orgs; per-org sender numbers
+  are the real long-term answer and are out of scope here.
+- **Escalation redaction (immigration/legal only).** `AnswerResult` now
+  carries `forbiddenCategory` (previously dropped — three categories collapse
+  to topic 'Otro'), and all three employer-visible write sites (escalation
+  row, qa_interaction event, escalation event) store a category marker
+  instead of the worker's words. `training_events.question_text` is exactly
+  what the audit CSV exports, so redacting only `escalations` would have left
+  the real exposure untouched. Employment and medical_dosing stay verbatim
+  deliberately: a wage question is not the risk class of a worker revealing
+  fear about their status. Deletion also rewrites escalation text (the
+  column is NOT NULL, so it gets a neutral marker rather than null).
+- **Raw-content retention.** New `prune-raw-content` cron (4:00 UTC,
+  `RAW_CONTENT_RETENTION_DAYS` default 180) nulls message bodies/transcripts/
+  media and training-event question/answer text, deleting local audio files
+  first; untracked inbound voice-note files are swept by mtime. Derived
+  training-documentation fields are never touched — they are the product.
+  The short window is a legal-posture choice: data not held cannot be
+  produced.
+- **Worker deletion (BORRAR MIS DATOS).** Strict whole-message keywords
+  (like ACEPTO) with a plain-Spanish confirm and a 24h expiry on the pending
+  state (pending-agreement pattern). Honored in any consent state, including
+  opted_out. Redaction tombstones name/phone, nulls content everywhere, sets
+  status inactive + consent opted_out so every send gate fails closed, and
+  writes a deliberately non-identifying `deletion_log` row (org + timestamp
+  only) that feeds an Overview notice — the training-count drop is explained
+  without telling a manager which worker got scared. The dashboard "Delete
+  worker data" action shares the same code path.
+- **Disclosure rewrite.** Keeps the employer-visibility sentence (honesty is
+  the point), scopes the "your exact words aren't shared" claim to legal/
+  migración only (employment stays verbatim, so a broader claim would be
+  false), and adds retention, BORRAR MIS DATOS, and the court-order-only
+  posture. Pinned by a word-for-word snapshot test.
+- **Export minimization.** CSV loses `phone` (excess PII in a document that
+  leaves the farm; the name already identifies) and `confidence`; the
+  transcript PDF loses its `Grounding:` line — both are internal
+  retrieval-quality signals, not compliance evidence. `source_chunk_ids`
+  verified absent from all exports. Deleted workers are excluded from every
+  export artifact.
+- **PII sweep.** Verified every log site uses `maskPhone` (inbound,
+  sendToWorker, transports, template refusals). Raw phones live only in the
+  DB source-of-truth tables, `webhook_logs.payload` (30-day prune), and
+  manager-facing dashboard responses, which are functional. No changes
+  needed.
+- **Setup token + auth throttling.** `/api/auth/setup` requires `SETUP_TOKEN`
+  on every call — NOT "lock after the first user", which would silently break
+  onboarding a second dairy on this multi-tenant instance. Constant-time
+  compare; unset disables setup. Login/setup throttle at 10 *failed*
+  attempts / 15 min / IP (fail2ban-style — successful logins never count, so
+  a busy manager can't lock themselves out). Login verifies a dummy argon2
+  hash on unknown emails to close the user-enumeration timing oracle.
+- **Signature validation default.** `twilioValidateSignature` now defaults on
+  for everything except mock (was: production only). README/.env.example
+  already described sandbox as on-by-default — the code was the thing that
+  was wrong.
+- **Consent race: documented, not "fixed".** pg-boss v10 runs one worker per
+  queue (`batchSize: 1`) and awaits the handler before the next fetch, so
+  inbound jobs are strictly serial on the single machine fly.toml pins — the
+  BAJA/ALTA interleave is not currently reachable, and a compare-and-set
+  would have been speculative complexity. RUNBOOK gained a "Scaling
+  constraint" section: `min_machines_running` stays 1 until consent writes
+  get a DB-level guard. A last-keyword-wins test pins the invariant.
+- **DATA-POLICY.md.** Written last so it documents shipped behavior, not
+  aspiration; plain English for a dairy owner's lawyer and a journalist, with
+  a 3rd–5th-grade Spanish worker summary (`POLITICA-DE-DATOS.es.md`). States
+  the no-voluntary-disclosure/compulsory-process-only posture and ties the
+  180-day window to it explicitly.
+- **Repo public face.** Proprietary LICENSE (source-visible, not open
+  source); POLICY-SCOPE's operating commitments extended with the
+  no-model-training subprocessor posture and the synthetic-eval-sets
+  commitment; README gained a Data governance section.
+- **Stripe replay protection.** Signed webhooks older than 5 minutes are
+  refused — landed before ENABLE_BILLING is ever real.
