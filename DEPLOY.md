@@ -48,6 +48,7 @@ fly volumes create establo_data --region <region> --size 10 --app <your-app-name
 ```bash
 fly secrets set \
   SESSION_SECRET="$(openssl rand -hex 32)" \
+  SETUP_TOKEN="$(openssl rand -hex 24)" \
   PUBLIC_BASE_URL="https://<your-app-name>.fly.dev" \
   ANTHROPIC_API_KEY="sk-ant-..." \
   OPENAI_API_KEY="sk-..." \
@@ -70,8 +71,11 @@ curl https://<your-app-name>.fly.dev/healthz   # {"ok":true,"mode":"production",
 ```
 
 First-run setup: open `https://<your-app-name>.fly.dev/app`, use the
-**Set up a dairy** tab to create the org + owner account. (Seed data is for
-local dev; don't seed production.)
+**Set up a dairy** tab to create the org + owner account — it asks for the
+`SETUP_TOKEN` you set above (required on every setup, not just the first:
+the instance is multi-tenant, and the token is what stops a stranger who
+finds the URL from creating themselves an org). (Seed data is for local
+dev; don't seed production.)
 
 ## 7. Point Twilio at the deployment
 

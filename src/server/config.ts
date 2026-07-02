@@ -25,6 +25,9 @@ function buildConfig(env: NodeJS.ProcessEnv) {
     port: Number(env.PORT ?? 8787),
     publicBaseUrl: (env.PUBLIC_BASE_URL ?? 'http://localhost:8787').replace(/\/$/, ''),
     sessionSecret,
+    // Required on EVERY /api/auth/setup call (multi-tenant instance — there
+    // is no "first user" exception). Unset → setup is disabled.
+    setupToken: env.SETUP_TOKEN || undefined,
     dataDir: env.DATA_DIR ?? './data/storage',
     databaseUrl: env.DATABASE_URL ?? 'postgres://establo:establo@localhost:5432/establo',
 

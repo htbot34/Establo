@@ -12,6 +12,7 @@ export default function Login() {
   const [orgName, setOrgName] = useState('');
   const [name, setName] = useState('');
   const [timezone, setTimezone] = useState('America/Boise');
+  const [setupToken, setSetupToken] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const { refresh } = useAuth();
@@ -27,7 +28,7 @@ export default function Login() {
       } else {
         await api('/api/auth/setup', {
           method: 'POST',
-          body: { orgName, timezone, name, email, password },
+          body: { orgName, timezone, name, email, password, setupToken },
         });
       }
       await refresh();
@@ -81,6 +82,15 @@ export default function Login() {
                 <div>
                   <Label>Your name</Label>
                   <Input value={name} onChange={(e) => setName(e.target.value)} required />
+                </div>
+                <div>
+                  <Label>Setup token</Label>
+                  <Input
+                    value={setupToken}
+                    onChange={(e) => setSetupToken(e.target.value)}
+                    required
+                    placeholder="Provided by your Establo contact"
+                  />
                 </div>
               </>
             )}
