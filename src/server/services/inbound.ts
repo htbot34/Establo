@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import {
   agreements,
@@ -157,8 +157,20 @@ export async function processInbound(db: Db, payload: InboundPayload): Promise<v
   const from = normalizeWhatsAppAddress(payload.From ?? '');
   if (!from) return;
 
-  const [worker] = await db.select().from(workers).where(eq(workers.phoneE164, from));
-  if (!worker || worker.status !== 'active') {
+  // Phone uniqueness is org-scoped, so one number can exist at two dairies on
+  // the same deployment (worker moved between co-op farms; consultant demos).
+  // The inbound webhook only knows the phone, so pick deterministically: the
+  // active record with the most recent inbound activity, else the newest.
+  const candidates = await db
+    .select()
+    .from(workers)
+    .where(and(eq(workers.phoneE164, from), eq(workers.status, 'active')));
+  const [worker] = candidates.sort(
+    (a, b) =>
+      (b.lastInboundAt?.getTime() ?? 0) - (a.lastInboundAt?.getTime() ?? 0) ||
+      b.createdAt.getTime() - a.createdAt.getTime(),
+  );
+  if (!worker) {
     const last = unknownPhoneReplies.get(from) ?? 0;
     if (Date.now() - last > 24 * 3600_000) {
       unknownPhoneReplies.set(from, Date.now());

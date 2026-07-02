@@ -92,7 +92,9 @@ export const workers = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    uniqueIndex('workers_phone_uq').on(t.phoneE164),
+    // Org-scoped: the same phone may exist at two different dairies (workers
+    // move between co-op farms; consultants demo with one phone).
+    uniqueIndex('workers_phone_org_uq').on(t.orgId, t.phoneE164),
     index('workers_org_idx').on(t.orgId),
     index('workers_consent_idx').on(t.orgId, t.consentStatus),
   ],

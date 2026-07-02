@@ -722,6 +722,41 @@ describe('cross-tenant isolation for the new tables', () => {
   });
 });
 
+describe('org-scoped worker phone uniqueness', () => {
+  it('two orgs can each enroll the same phone; a same-org duplicate still 409s', async () => {
+    const shared = '+15007779999';
+    const headersA = await ownerSession('owner-a@test.local', 'password-aaa');
+    const headersB = await ownerSession('owner-b@test.local', 'password-bbb');
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/workers',
+      headers: headersA,
+      payload: { name: 'Consultor Compartido', phoneE164: shared },
+    });
+    expect(first.statusCode).toBe(200);
+
+    // Same phone at a DIFFERENT dairy — allowed (and no cross-org 409 oracle).
+    const otherOrg = await app.inject({
+      method: 'POST',
+      url: '/api/workers',
+      headers: headersB,
+      payload: { name: 'Consultor Compartido', phoneE164: shared },
+    });
+    expect(otherOrg.statusCode).toBe(200);
+    expect(JSON.parse(otherOrg.body).orgId).toBe(orgB.id);
+
+    // Same phone at the SAME dairy — still a data-entry mistake.
+    const dup = await app.inject({
+      method: 'POST',
+      url: '/api/workers',
+      headers: headersA,
+      payload: { name: 'Duplicado', phoneE164: shared },
+    });
+    expect(dup.statusCode).toBe(409);
+  });
+});
+
 describe('forbidden topics beat the Spanish-only language gate', () => {
   it.each([
     ['boss when do you pay me my sueldo'],

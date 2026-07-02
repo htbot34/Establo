@@ -366,10 +366,15 @@ export function registerApiRoutes(app: FastifyInstance): void {
       return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
     }
     const db = getDb();
+    // Org-scoped duplicate check: the same phone may exist at another dairy,
+    // and answering 409 for other orgs' numbers would be a cross-org
+    // existence oracle.
     const existing = await db
       .select()
       .from(workers)
-      .where(eq(workers.phoneE164, parsed.data.phoneE164));
+      .where(
+        and(eq(workers.phoneE164, parsed.data.phoneE164), eq(workers.orgId, req.authOrg!.id)),
+      );
     if (existing.length > 0) {
       return reply.code(409).send({ error: 'A worker with that phone number already exists' });
     }
