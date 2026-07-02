@@ -142,7 +142,9 @@ describe('static demo in-browser API', () => {
       body: { workerId: luz.id, kind: 'text', text: 'OK' },
     });
     msgs = await lastMessages(luz.id, 3);
-    expect(msgs.some((m) => m.bodyText?.includes('Lección 1 de 6'))).toBe(true);
+    // 8 modules in the seeded induction track (6 core + 2 curated-video
+    // safety lessons added by the video-catalog layer).
+    expect(msgs.some((m) => m.bodyText?.includes('Lección 1 de 8'))).toBe(true);
 
     await demoFetch('/api/simulator/inbound', {
       method: 'POST',
@@ -180,8 +182,8 @@ describe('static demo in-browser API', () => {
     expect(luzTitles.some((t) => t.includes('Químicos'))).toBe(true);
     expect(anaTitles.some((t) => t.includes('Químicos'))).toBe(true);
     // and the delivery counts differ.
-    expect(luzTitles.length).toBe(5);
-    expect(anaTitles.length).toBe(3);
+    expect(luzTitles.length).toBe(6);
+    expect(anaTitles.length).toBe(4);
   });
 
   it('a module with a video link emits the video line on delivery', async () => {
