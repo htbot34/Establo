@@ -104,6 +104,21 @@ ANY edit to it and compare `evals/results-*.json`.
   the audit pack — never hand-edit them; every legitimate transition has a
   flow (ALTA/BAJA/ACEPTO on WhatsApp, attestation in the dashboard).
 
+## Scaling constraint: keep `min_machines_running = 1`
+
+Several correctness assumptions are single-process today and must be
+re-engineered before running more than one machine/process:
+
+- The in-memory rate limiter, auth-failure throttle, and the
+  unknown-number/opted-out reply-once caches (documented in DECISIONS.md).
+- **Consent transition ordering**: `optInWorker`/`optOutWorker` are plain
+  UPDATEs with no compare-and-set. That is safe now only because pg-boss
+  processes the `inbound-message` queue serially (one worker, `batchSize: 1`,
+  and the worker loop awaits each handler before fetching again), so two
+  keywords from the same worker can never interleave. A second machine gets
+  its own worker and breaks that guarantee — add a DB-level guard (e.g.
+  conditional on `updated_at`) before scaling out.
+
 ## Twilio / Meta checklist (kept here because it gates launches)
 
 1. Meta business verification (days) → 2. WhatsApp sender approval →

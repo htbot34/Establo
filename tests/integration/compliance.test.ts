@@ -299,6 +299,24 @@ describe('BAJA opt-out: blocks everything until ALTA', () => {
     expect(tick2.delivered).toBe(1);
   });
 
+  it('the LAST consent keyword always wins (BAJA→ALTA and ALTA→BAJA)', async () => {
+    // pg-boss processes inbound-message jobs serially (one worker,
+    // batchSize 1, handler awaited before the next fetch), so keywords from
+    // one worker can never interleave in a single-machine deployment — see
+    // RUNBOOK "Scaling constraint". This pins the resulting invariant.
+    const w = await makeWorker({ consentStatus: 'opted_in', lastInboundAt: new Date(), disclosureSentAt: new Date() });
+
+    await injectInbound(w.phoneE164, 'BAJA');
+    await injectInbound(w.phoneE164, 'ALTA');
+    let [after] = await db.select().from(workers).where(eq(workers.id, w.id));
+    expect(after.consentStatus).toBe('opted_in');
+
+    await injectInbound(w.phoneE164, 'ALTA');
+    await injectInbound(w.phoneE164, 'BAJA');
+    [after] = await db.select().from(workers).where(eq(workers.id, w.id));
+    expect(after.consentStatus).toBe('opted_out');
+  });
+
   it('honors the variant "no más mensajes"', async () => {
     const w = await makeWorker({ consentStatus: 'opted_in', lastInboundAt: new Date(), disclosureSentAt: new Date() });
     await injectInbound(w.phoneE164, 'no más mensajes');
