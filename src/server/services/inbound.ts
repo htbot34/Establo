@@ -116,7 +116,7 @@ async function orgName(db: Db, orgId: string): Promise<string> {
 async function sendDisclosureIfNeeded(db: Db, worker: Worker): Promise<void> {
   if (!needsDisclosure(worker)) return;
   const sent = await sendToWorker(db, worker.id, {
-    text: ES.disclosure(await orgName(db, worker.orgId)),
+    text: ES.disclosure(await orgName(db, worker.orgId), config().rawContentRetentionDays),
     kind: 'consent',
   });
   if (sent.ok) {

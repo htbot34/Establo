@@ -54,13 +54,25 @@ export const ES = {
     `🎉 ¡Felicidades, ${name}! Completaste el programa "${track}". ` +
     'Tu certificado ya quedó guardado con tu supervisor.',
 
-  /** One-time first-contact disclosure (privacy/monitoring notice). */
-  disclosure: (dairyName: string) =>
+  /**
+   * One-time first-contact disclosure (privacy/monitoring notice). Honest by
+   * design: the employer-visibility sentence stays. The restricted-topics
+   * sentence is scoped to what is actually true after the redaction work —
+   * exact words on legal/migración never enter the record (sueldo/dosing
+   * questions still do, so the claim is deliberately limited). Retention and
+   * the deletion right must match the shipped behavior (retention job +
+   * BORRAR MIS DATOS); retentionDays follows RAW_CONTENT_RETENTION_DAYS.
+   */
+  disclosure: (dairyName: string, retentionDays = 180) =>
     `Hola 👋 Soy Establo, el ayudante de capacitación de ${dairyName}. ` +
     'Tus preguntas y respuestas aquí se guardan como registros de capacitación que tu empleador puede ver. ' +
     'Las notas de voz se convierten a texto. ' +
-    'No puedo hablar de sueldo, temas legales ni de migración — eso es con tu supervisor. ' +
-    'Si ya no quieres recibir mensajes, escribe BAJA cuando quieras.',
+    'No puedo hablar de sueldo, temas legales ni de migración — esos temas van con tu supervisor. ' +
+    'Si preguntas algo legal o de migración, tus palabras exactas no quedan en el registro. ' +
+    `Los mensajes se borran a los ${retentionDays} días, y puedes borrar todos tus datos cuando quieras: escribe BORRAR MIS DATOS. ` +
+    'Tus datos solo salen de la lechería si la ley lo obliga. ' +
+    'Si ya no quieres recibir mensajes, escribe BAJA. ' +
+    '¿Más dudas? Pregunta a tu supervisor por la política de datos.',
 
   optInConfirm:
     '✅ ¡Listo! Ya estás dado de alta. Mándame tus preguntas del trabajo por texto o audio cuando quieras.',
