@@ -97,6 +97,30 @@ const RULES: Array<{ category: ForbiddenCategory; topic: Topic; patterns: RegExp
       // vacuna(s)/vacunar — never "vacuno" (cattle, as in "ganado vacuno").
       /\bvacunas?\b/, /\bvacunar/, /\bvacunacion\b/,
       /\bpastillas?\b/,
+      // ── English coverage (mixed crews ask in English too) ──
+      // dose/dosage — the required 'e' keeps Spanish "dos" (two) clear, and
+      // the word boundaries keep English "does" ("how much does it cost")
+      // out: d-o-e-s never matches d-o-s-e.
+      /\bdoses?\b/, /\bdosages?\b/,
+      /\bpenicillin\b/, /\boxytocin\b/, /\bantibiotics?\b/,
+      // vaccine/vaccinat(e|ed|ion) — unlike Spanish, where "vacuna" sits one
+      // letter from "vacuno" (cattle), no English dairy word shares the
+      // double-c "vaccin" stem ("vacuum" has no cc), so the bounded stem is
+      // safe.
+      /\bvaccines?\b/, /\bvaccinat/,
+      // "injection of X" — mirroring /\binyecci[oó]n de\b/: the required "of"
+      // keeps status reports ("the injection site is swollen") out.
+      /\binjection of\b/,
+      // How-much/which-medicine phrasings, mirroring "cuanto medicamento" /
+      // "que medicina le doy". Bare "medicine"/"medication" stays out — "the
+      // medicine cabinet is locked" is not a dosing question.
+      /how much medi(cine|cation)/, /what medi(cine|cation) (do|should) i give/,
+      // pill(s) — word boundaries keep "pillars"/"spill" clear.
+      /\bpills?\b/,
+      // English ml/cc/units amounts, mirroring /cuant[oa]s? (ml|cc|...)/.
+      // The required how-many/how-much prefix keeps incidental unit mentions
+      // ("record how many liters" has no ml/cc/units) out of the guard.
+      /how (many|much) (ml|ccs?|units|milliliters)\b/,
     ],
   },
 ];
