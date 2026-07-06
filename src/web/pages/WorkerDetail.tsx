@@ -86,6 +86,7 @@ interface WorkerDetailData {
   lastInboundAt: string | null;
   notes: string | null;
   jobRole?: string | null;
+  alwaysAudio?: boolean;
   consentStatus?: string;
   consentedAt?: string | null;
   consentMethod?: string | null;
@@ -181,6 +182,16 @@ export default function WorkerDetail() {
     setError(null);
     try {
       await api(`/api/workers/${id}`, { method: 'PATCH', body: { jobRole: jobRole || null } });
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function setAlwaysAudio(alwaysAudio: boolean) {
+    setError(null);
+    try {
+      await api(`/api/workers/${id}`, { method: 'PATCH', body: { alwaysAudio } });
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -317,6 +328,26 @@ export default function WorkerDetail() {
             ))}
           </Select>
         </div>
+      </Card>
+
+      {/* ── Voice replies (per-worker always-send-audio toggle) ── */}
+      <Card className="mb-4 flex flex-wrap items-center gap-3 p-4">
+        <div className="min-w-64 flex-1">
+          <h2 className="text-sm font-medium text-foreground">Always send voice notes</h2>
+          <p className="text-xs text-muted-foreground">
+            Attach a spoken voice note to every answer and check reply — not only when this
+            worker sends audio. Lessons always include audio.
+          </p>
+        </div>
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+          <input
+            type="checkbox"
+            className="size-4 accent-primary"
+            checked={!!data.alwaysAudio}
+            onChange={(e) => void setAlwaysAudio(e.target.checked)}
+          />
+          {data.alwaysAudio ? 'On' : 'Off'}
+        </label>
       </Card>
 
       {/* ── Compliance: consent + cow care agreement ── */}

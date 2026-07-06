@@ -35,6 +35,10 @@ export default function Settings() {
   const [agreement, setAgreement] = useState<Agreement | null>(null);
   const [agreementText, setAgreementText] = useState('');
   const [agreementSaved, setAgreementSaved] = useState(false);
+  // Forced-escalation keywords, one per textarea line. null = not loaded
+  // (e.g. the static demo has no GET /api/org) → the section stays hidden.
+  const [keywordsText, setKeywordsText] = useState<string | null>(null);
+  const [keywordsSaved, setKeywordsSaved] = useState(false);
 
   useEffect(() => {
     if (me) {
@@ -51,7 +55,30 @@ export default function Settings() {
         setAgreementText(a.textEs);
       })
       .catch(() => {});
+    void api<{ escalationKeywords: string[] }>('/api/org')
+      .then((o) => setKeywordsText(o.escalationKeywords.join('\n')))
+      .catch(() => {});
   }, []);
+
+  async function saveKeywords() {
+    setError(null);
+    setKeywordsSaved(false);
+    try {
+      const list = (keywordsText ?? '')
+        .split('\n')
+        .map((k) => k.trim())
+        .filter(Boolean);
+      const o = await api<{ escalationKeywords: string[] }>('/api/org', {
+        method: 'PATCH',
+        body: { escalationKeywords: list },
+      });
+      setKeywordsText(o.escalationKeywords.join('\n'));
+      setKeywordsSaved(true);
+      setTimeout(() => setKeywordsSaved(false), 2500);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
 
   async function saveAgreement() {
     setError(null);
@@ -134,6 +161,30 @@ export default function Settings() {
           README for the path from mock to sandbox to production.
         </p>
       </Card>
+
+      {keywordsText !== null && (
+        <Card className="mb-4 max-w-xl p-5">
+          <h2 className="mb-1 text-sm font-medium text-foreground">
+            Forced-escalation keywords
+          </h2>
+          <p className="mb-3 text-xs text-muted-foreground">
+            One keyword per line. Any worker question containing one of these words (accents and
+            capitalization don't matter) is answered normally but always flagged for you as an
+            escalation — useful for chemicals, equipment, or topics you want to hear about
+            personally.
+          </p>
+          <Textarea
+            rows={5}
+            value={keywordsText}
+            onChange={(e) => setKeywordsText(e.target.value)}
+            placeholder={'ácido\nsala de espera\namoniaco'}
+          />
+          <div className="mt-3 flex items-center gap-3">
+            <Button onClick={() => void saveKeywords()}>Save keywords</Button>
+            {keywordsSaved && <SavedNote />}
+          </div>
+        </Card>
+      )}
 
       {agreement && (
         <Card className="mb-4 max-w-xl p-5">

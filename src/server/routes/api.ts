@@ -371,6 +371,8 @@ export function registerApiRoutes(app: FastifyInstance): void {
     notes: z.string().max(2000).optional().nullable(),
     status: z.enum(['active', 'inactive']).optional(),
     jobRole: z.enum(WORKER_ROLES).nullable().optional(),
+    // Always attach TTS audio to answers/check replies (see services/drip.ts).
+    alwaysAudio: z.boolean().optional(),
   });
 
   app.post('/api/workers', async (req, reply) => {
@@ -1102,12 +1104,25 @@ export function registerApiRoutes(app: FastifyInstance): void {
   });
 
   // ── Org settings ──────────────────────────────────────────────────────────
+  app.get('/api/org', async (req) => {
+    const o = req.authOrg!;
+    return {
+      id: o.id,
+      name: o.name,
+      timezone: o.timezone,
+      herdSize: o.herdSize,
+      escalationKeywords: o.escalationKeywords,
+    };
+  });
+
   app.patch('/api/org', async (req, reply) => {
     const parsed = z
       .object({
         name: z.string().min(2).max(120).optional(),
         timezone: z.string().min(1).max(64).optional(),
         herdSize: z.number().int().min(1).max(1_000_000).nullable().optional(),
+        // Forced-escalation keywords (see services/escalationKeywords.ts).
+        escalationKeywords: z.array(z.string().trim().min(1).max(80)).max(50).optional(),
       })
       .safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid input' });
@@ -1117,7 +1132,13 @@ export function registerApiRoutes(app: FastifyInstance): void {
       .set({ ...parsed.data, updatedAt: new Date() })
       .where(eq(orgs.id, req.authOrg!.id))
       .returning();
-    return { id: row.id, name: row.name, timezone: row.timezone, herdSize: row.herdSize };
+    return {
+      id: row.id,
+      name: row.name,
+      timezone: row.timezone,
+      herdSize: row.herdSize,
+      escalationKeywords: row.escalationKeywords,
+    };
   });
 
   // ── Manual drip trigger (all modes; the simulator page uses it in mock) ──

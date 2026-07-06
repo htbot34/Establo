@@ -455,3 +455,71 @@ every claim in them was already true of shipped code.
   commitment; README gained a Data governance section.
 - **Stripe replay protection.** Signed webhooks older than 5 minutes are
   refused — landed before ENABLE_BILLING is ever real.
+
+## Three scoped features (July 2026)
+
+### English medical-dosing guard coverage
+
+Mixed crews ask dosing questions in English too, so the `medical_dosing`
+rules gained English patterns (dose/dosage, penicillin, oxytocin,
+antibiotic(s), vaccine/vaccinat*, "injection of", how-much-medicine
+phrasings, pill(s), "how many/much ml|cc|units"). Same discipline as the
+Spanish hardening pass — every addition checked against the nearest real
+word: "does" is one transposition from "dose" (word-bounded `dose` never
+matches it), "vacuum" is the closest word to the double-c "vaccin" stem,
+"pillars" contains "pill", and Spanish "dos" (two) sits one letter from
+"dose". "injection of" mirrors `/\binyeccion de\b/` — the required "of"
+keeps status reports ("the injection site is swollen") out. Bare
+"medicine"/"medication" deliberately does NOT match ("the medicine cabinet
+is locked" is not a dosing question); only how-much/what-do-I-give framings
+do, mirroring "cuanto medicamento"/"que medicina le doy". The guard test
+table gained 13 English must-refuse phrasings and 7 must-not-match farm
+sentences.
+
+### Per-worker always-send-audio toggle
+
+- `workers.always_audio` (boolean, default false, migration 0007): attach a
+  TTS voice note to Q&A answers and comprehension-check feedback even when
+  the worker typed — some workers text short questions but need to LISTEN to
+  the answer. Default off, so every existing worker keeps today's behavior
+  (voice reply only for voice notes) until a manager flips the toggle.
+- The decision is one pure function, `shouldSendAudio(wasVoice, alwaysAudio)`
+  in `services/drip.ts`, used by BOTH reply paths (question answers in
+  `inbound.ts`, check feedback in `drip.ts`) so they cannot drift; all four
+  input combinations are unit-pinned. Module deliveries do not consult the
+  flag — they always attach audio, unchanged.
+- Exposed through the existing worker PATCH endpoint (the detail GET already
+  returns the whole row) plus a toggle card on the worker detail page — no
+  new route surface.
+
+### Org-configurable forced-escalation keywords
+
+- `orgs.escalation_keywords` (jsonb string array, default `[]`, migration
+  0008) — jsonb over `text[]` to match every other string-list column in the
+  schema (`applies_to_roles`, `check_options_es`, `source_chunk_ids`).
+- Matching (`services/escalationKeywords.ts`) reuses the guard's
+  normalization: accent-stripped lowercase, whole-word. Word boundaries are
+  lookarounds (`(?<!\w)…(?!\w)`) rather than `\b`, because `\b` silently
+  never matches when a keyword starts or ends with a non-word character
+  ("lavado (CIP)"). Keywords are regex-escaped, and the escalation reason
+  carries the manager's own spelling of the keyword, not the normalized form.
+- Ordering in the question path: the forbidden-topic guard wins — a guard hit
+  already refuses + escalates with its own reason, and a second row would be
+  noise (it would also complicate the immigration/legal redaction; keyword
+  hits can only exist when the guard did NOT fire, so the worker's words are
+  never redacted here). The keyword check runs before answering; a hit NEVER
+  blocks the answer — the supervisor wants visibility, not a gag — but always
+  writes an escalation row ("Palabra clave configurada por la granja:
+  <keyword>") plus an `escalation` training event, the same coexistence
+  pattern as not_found escalations next to their qa_interaction log. A
+  keyword question that is ALSO not answerable produces two escalation rows
+  with distinct reasons, deliberately: "the farm cares about this topic" and
+  "the SOPs don't cover it" are different signals.
+- GET/PATCH live on `/api/org` (new GET; the existing PATCH gained the
+  field), edited as a one-keyword-per-line textarea in Settings. The static
+  demo has no `GET /api/org`, so the section hides itself there instead of
+  showing a dead control.
+- Integration coverage (`tests/integration/scopedFeatures.test.ts`) runs the
+  real inbound pipeline: accented keyword vs accentless question, escalation
+  row + event created next to a grounded answer, guard precedence, and the
+  always-audio voice-note attachment for text questions.

@@ -27,7 +27,14 @@ import {
   parseConsentKeyword,
   type ConsentKeyword,
 } from './consent.js';
-import { deliverNotifiedModules, findPendingCheck, handleCheckAnswer, ttsVariant } from './drip.js';
+import {
+  deliverNotifiedModules,
+  findPendingCheck,
+  handleCheckAnswer,
+  shouldSendAudio,
+  ttsVariant,
+} from './drip.js';
+import { matchEscalationKeyword, recordKeywordEscalation } from './escalationKeywords.js';
 import { mapToFarmTopic } from './farmTopics.js';
 import { matchForbiddenTopic } from './guards.js';
 import { looksSpanish } from './language.js';
@@ -430,8 +437,25 @@ export async function processInbound(db: Db, payload: InboundPayload): Promise<v
         return;
       }
 
+      // Org-configured forced-escalation keywords: checked after the
+      // forbidden-topic guard (a guard hit refuses + escalates on its own
+      // path below, which takes precedence) and before answering. A hit never
+      // blocks the answer — the supervisor wants visibility, not a gag — but
+      // always escalates, the same way not_found escalations coexist with the
+      // qa_interaction log.
+      let keywordHit: string | null = null;
+      if (!matchForbiddenTopic(text)) {
+        const [org] = await db
+          .select({ escalationKeywords: orgs.escalationKeywords })
+          .from(orgs)
+          .where(eq(orgs.id, worker.orgId));
+        keywordHit = matchEscalationKeyword(text, org?.escalationKeywords ?? []);
+      }
+
       const result = await answerQuestion(db, worker.orgId, text);
-      const audio = wasVoice ? await synthesizeSpeech(ttsVariant(result.text)) : null;
+      const audio = shouldSendAudio(wasVoice, worker.alwaysAudio)
+        ? await synthesizeSpeech(ttsVariant(result.text))
+        : null;
       await sendToWorker(db, worker.id, {
         text: result.text,
         audioUrl: audio?.publicUrl,
@@ -465,6 +489,20 @@ export async function processInbound(db: Db, payload: InboundPayload): Promise<v
         sourceChunkIds: result.sourceChunkIds.length > 0 ? result.sourceChunkIds : null,
         confidence: result.confidence,
       });
+
+      // Keyword hits only exist when the guard did NOT fire, so the worker's
+      // words are never redacted here (recordedQuestion === text).
+      if (keywordHit) {
+        await recordKeywordEscalation(db, {
+          orgId: worker.orgId,
+          workerId: worker.id,
+          questionText: text,
+          keyword: keywordHit,
+          topic: result.topic,
+          farmTopic,
+          confidence: result.confidence,
+        });
+      }
 
       if (result.forbidden || result.confidence === 'not_found') {
         await db.insert(escalations).values({
