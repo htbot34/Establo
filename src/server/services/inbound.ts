@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import {
   agreements,
@@ -16,7 +16,10 @@ import { absPath, saveBuffer } from '../lib/storage.js';
 import { deliverPendingAgreement, recordSignature } from './agreements.js';
 import { answerQuestion } from './answer.js';
 import {
+  DELETION_CONFIRM_WINDOW_MS,
   isAceptoReply,
+  isDeletionConfirm,
+  isDeletionRequest,
   markDisclosureSent,
   needsDisclosure,
   optInWorker,
@@ -24,8 +27,16 @@ import {
   parseConsentKeyword,
   type ConsentKeyword,
 } from './consent.js';
-import { deliverNotifiedModules, findPendingCheck, handleCheckAnswer, ttsVariant } from './drip.js';
+import {
+  deliverNotifiedModules,
+  findPendingCheck,
+  handleCheckAnswer,
+  shouldSendAudio,
+  ttsVariant,
+} from './drip.js';
+import { matchEscalationKeyword, recordKeywordEscalation } from './escalationKeywords.js';
 import { mapToFarmTopic } from './farmTopics.js';
+import { matchForbiddenTopic } from './guards.js';
 import { looksSpanish } from './language.js';
 import { ES } from './messages.es.js';
 import { checkRateLimit } from './rateLimit.js';
@@ -34,6 +45,7 @@ import { sendToWorker } from './sendToWorker.js';
 import { synthesizeSpeech, transcribeAudio } from './speech.js';
 import { logTrainingEvent } from './trainingEvents.js';
 import { downloadTwilioMedia, getTransport } from './transport.js';
+import { deleteWorkerData } from './workerDeletion.js';
 
 /** Twilio inbound webhook form fields we care about. */
 export interface InboundPayload {
@@ -111,7 +123,7 @@ async function orgName(db: Db, orgId: string): Promise<string> {
 async function sendDisclosureIfNeeded(db: Db, worker: Worker): Promise<void> {
   if (!needsDisclosure(worker)) return;
   const sent = await sendToWorker(db, worker.id, {
-    text: ES.disclosure(await orgName(db, worker.orgId)),
+    text: ES.disclosure(await orgName(db, worker.orgId), config().rawContentRetentionDays),
     kind: 'consent',
   });
   if (sent.ok) {
@@ -156,8 +168,20 @@ export async function processInbound(db: Db, payload: InboundPayload): Promise<v
   const from = normalizeWhatsAppAddress(payload.From ?? '');
   if (!from) return;
 
-  const [worker] = await db.select().from(workers).where(eq(workers.phoneE164, from));
-  if (!worker || worker.status !== 'active') {
+  // Phone uniqueness is org-scoped, so one number can exist at two dairies on
+  // the same deployment (worker moved between co-op farms; consultant demos).
+  // The inbound webhook only knows the phone, so pick deterministically: the
+  // active record with the most recent inbound activity, else the newest.
+  const candidates = await db
+    .select()
+    .from(workers)
+    .where(and(eq(workers.phoneE164, from), eq(workers.status, 'active')));
+  const [worker] = candidates.sort(
+    (a, b) =>
+      (b.lastInboundAt?.getTime() ?? 0) - (a.lastInboundAt?.getTime() ?? 0) ||
+      b.createdAt.getTime() - a.createdAt.getTime(),
+  );
+  if (!worker) {
     const last = unknownPhoneReplies.get(from) ?? 0;
     if (Date.now() - last > 24 * 3600_000) {
       unknownPhoneReplies.set(from, Date.now());
@@ -219,6 +243,36 @@ export async function processInbound(db: Db, payload: InboundPayload): Promise<v
   const keyword = textKeyword ?? parseConsentKeyword(text);
   if (keyword) {
     await handleConsentKeyword(db, worker, keyword);
+    return;
+  }
+
+  // ── Worker data deletion (BORRAR MIS DATOS): a data right, honored in any
+  // consent state (including opted_out, hence before that early return).
+  // Request → plain-language confirmation; SI BORRAR inside the window →
+  // irreversible redaction. An unconfirmed request quietly expires.
+  if (isDeletionRequest(text)) {
+    await db
+      .update(workers)
+      .set({ deletionRequestedAt: now, updatedAt: now })
+      .where(eq(workers.id, worker.id));
+    await sendToWorker(db, worker.id, { text: ES.deletionConfirmPrompt, kind: 'consent' });
+    return;
+  }
+  if (isDeletionConfirm(text)) {
+    const requestedAt = worker.deletionRequestedAt;
+    if (requestedAt && now.getTime() - requestedAt.getTime() <= DELETION_CONFIRM_WINDOW_MS) {
+      // Confirm to the worker BEFORE the phone is tombstoned (the redaction
+      // then nulls this message's stored body along with everything else).
+      await sendToWorker(db, worker.id, { text: ES.deletionDone, kind: 'consent' });
+      await deleteWorkerData(db, worker.id);
+      return;
+    }
+    // Expired or never requested — re-explain instead of silently deleting.
+    await db
+      .update(workers)
+      .set({ deletionRequestedAt: now, updatedAt: now })
+      .where(eq(workers.id, worker.id));
+    await sendToWorker(db, worker.id, { text: ES.deletionConfirmPrompt, kind: 'consent' });
     return;
   }
 
@@ -364,8 +418,11 @@ export async function processInbound(db: Db, payload: InboundPayload): Promise<v
       // running retrieval (which would return the Spanish "no encontré eso" as
       // if it were a knowledge gap). Logged as a normal interaction, never an
       // escalation. Runs only here, so ALTA/BAJA/ACEPTO/OK/numeric answers are
-      // already handled above and never intercepted.
-      if (!looksSpanish(text)) {
+      // already handled above and never intercepted. Forbidden-topic text is
+      // exempt: it must fall through to answerQuestion(), whose guard refuses
+      // and escalates — otherwise an English "when do you pay me" would get
+      // the language nudge and never reach a human.
+      if (!looksSpanish(text) && !matchForbiddenTopic(text)) {
         await sendToWorker(db, worker.id, { text: ES.spanishOnly, kind: 'reply' });
         await logTrainingEvent(db, {
           orgId: worker.orgId,
@@ -380,13 +437,44 @@ export async function processInbound(db: Db, payload: InboundPayload): Promise<v
         return;
       }
 
+      // Org-configured forced-escalation keywords: checked after the
+      // forbidden-topic guard (a guard hit refuses + escalates on its own
+      // path below, which takes precedence) and before answering. A hit never
+      // blocks the answer — the supervisor wants visibility, not a gag — but
+      // always escalates, the same way not_found escalations coexist with the
+      // qa_interaction log.
+      let keywordHit: string | null = null;
+      if (!matchForbiddenTopic(text)) {
+        const [org] = await db
+          .select({ escalationKeywords: orgs.escalationKeywords })
+          .from(orgs)
+          .where(eq(orgs.id, worker.orgId));
+        keywordHit = matchEscalationKeyword(text, org?.escalationKeywords ?? []);
+      }
+
       const result = await answerQuestion(db, worker.orgId, text);
-      const audio = wasVoice ? await synthesizeSpeech(ttsVariant(result.text)) : null;
+      const audio = shouldSendAudio(wasVoice, worker.alwaysAudio)
+        ? await synthesizeSpeech(ttsVariant(result.text))
+        : null;
       await sendToWorker(db, worker.id, {
         text: result.text,
         audioUrl: audio?.publicUrl,
         kind: 'reply',
       });
+
+      // Immigration/legal guard hits: the worker's exact words never enter
+      // employer-visible records (the escalation row, both training events,
+      // and therefore the audit-pack CSV) — only a category marker does.
+      // Employment and medical_dosing stay verbatim on purpose: a wage or
+      // dosing question is not the same risk class as a worker revealing
+      // fear about their status.
+      const redactCategory =
+        result.forbiddenCategory === 'immigration' || result.forbiddenCategory === 'legal'
+          ? result.forbiddenCategory
+          : null;
+      const recordedQuestion = redactCategory
+        ? `Tema restringido: ${redactCategory === 'immigration' ? 'migración' : 'legal'}`
+        : text;
 
       const farmTopic = mapToFarmTopic(result.topic, text);
       await logTrainingEvent(db, {
@@ -395,18 +483,32 @@ export async function processInbound(db: Db, payload: InboundPayload): Promise<v
         eventType: 'qa_interaction',
         topic: result.topic,
         farmTopic,
-        questionText: text,
+        questionText: recordedQuestion,
         answerText: result.text,
         sourceDocumentId: result.sourceDocumentId,
         sourceChunkIds: result.sourceChunkIds.length > 0 ? result.sourceChunkIds : null,
         confidence: result.confidence,
       });
 
+      // Keyword hits only exist when the guard did NOT fire, so the worker's
+      // words are never redacted here (recordedQuestion === text).
+      if (keywordHit) {
+        await recordKeywordEscalation(db, {
+          orgId: worker.orgId,
+          workerId: worker.id,
+          questionText: text,
+          keyword: keywordHit,
+          topic: result.topic,
+          farmTopic,
+          confidence: result.confidence,
+        });
+      }
+
       if (result.forbidden || result.confidence === 'not_found') {
         await db.insert(escalations).values({
           orgId: worker.orgId,
           workerId: worker.id,
-          questionText: text,
+          questionText: recordedQuestion,
           reason: result.forbidden
             ? 'Tema restringido (sueldo/legal/migración/dosis)'
             : 'No encontrado en los SOPs',
@@ -417,7 +519,7 @@ export async function processInbound(db: Db, payload: InboundPayload): Promise<v
           eventType: 'escalation',
           topic: result.topic,
           farmTopic,
-          questionText: text,
+          questionText: recordedQuestion,
           confidence: 'not_found',
         });
       }

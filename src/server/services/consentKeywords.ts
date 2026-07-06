@@ -44,6 +44,31 @@ export function isAceptoReply(text: string): boolean {
   return /^(si )?(lo )?acepto$/.test(n) || n === 'acepto el acuerdo';
 }
 
+// ── Worker data deletion (BORRAR MIS DATOS) ─────────────────────────────────
+// Matching is strict (whole message), like ACEPTO: an irreversible deletion
+// must never fire on an incidental phrase inside a longer sentence.
+
+const DELETION_REQUEST_PATTERNS = [
+  /^(quiero )?borrar? (todos )?mis datos$/,
+  /^(quiero )?eliminar (todos )?mis datos$/,
+  /^borrar datos$/,
+];
+
+/** "BORRAR MIS DATOS" (and obvious variants) — starts the deletion flow. */
+export function isDeletionRequest(text: string): boolean {
+  const n = normalize(text);
+  return DELETION_REQUEST_PATTERNS.some((p) => p.test(n));
+}
+
+/** "SI BORRAR" — confirms a pending deletion request. */
+export function isDeletionConfirm(text: string): boolean {
+  const n = normalize(text);
+  return /^si borrar( mis datos)?$/.test(n);
+}
+
+/** How long a deletion request stays confirmable before it quietly expires. */
+export const DELETION_CONFIRM_WINDOW_MS = 24 * 3600_000;
+
 /** FARM requires annual signatures; flag at 11 months so renewals happen on time. */
 export const RENEWAL_DUE_MONTHS = 11;
 

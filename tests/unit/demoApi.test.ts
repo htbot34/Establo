@@ -142,7 +142,9 @@ describe('static demo in-browser API', () => {
       body: { workerId: luz.id, kind: 'text', text: 'OK' },
     });
     msgs = await lastMessages(luz.id, 3);
-    expect(msgs.some((m) => m.bodyText?.includes('Lección 1 de 6'))).toBe(true);
+    // 8 modules in the seeded induction track (6 core + 2 curated-video
+    // safety lessons added by the video-catalog layer).
+    expect(msgs.some((m) => m.bodyText?.includes('Lección 1 de 8'))).toBe(true);
 
     await demoFetch('/api/simulator/inbound', {
       method: 'POST',
@@ -180,8 +182,8 @@ describe('static demo in-browser API', () => {
     expect(luzTitles.some((t) => t.includes('Químicos'))).toBe(true);
     expect(anaTitles.some((t) => t.includes('Químicos'))).toBe(true);
     // and the delivery counts differ.
-    expect(luzTitles.length).toBe(5);
-    expect(anaTitles.length).toBe(3);
+    expect(luzTitles.length).toBe(6);
+    expect(anaTitles.length).toBe(4);
   });
 
   it('a module with a video link emits the video line on delivery', async () => {
@@ -364,6 +366,45 @@ describe('reviewer demo script — retrieval and routing', () => {
     expect(reply.bodyText).not.toContain('📄 Fuente');
     const after = await demoFetch('/api/escalations');
     expect(after.length).toBe(before); // a normal interaction, never a knowledge gap
+  });
+
+  it('immigration questions store only the category marker; sueldo questions stay verbatim', async () => {
+    // Immigration → redacted in every employer-visible record.
+    await ask('que hago si llega la migra al establo');
+    let esc = await demoFetch('/api/escalations');
+    expect(esc[0].questionText).toBe('Tema restringido: migración');
+    expect(esc[0].questionText).not.toContain('establo');
+    const maria = await workerByName('María');
+    let detail = await demoFetch(`/api/workers/${maria.id}`);
+    const immigrationEvents = detail.events.filter(
+      (e: { questionText: string | null }) => e.questionText?.includes('llega'),
+    );
+    expect(immigrationEvents).toHaveLength(0);
+
+    // Employment → verbatim (deliberately not redacted).
+    const sueldo = '¿me puedes subir el sueldo este mes?';
+    await ask(sueldo);
+    esc = await demoFetch('/api/escalations');
+    expect(esc.some((e: { questionText: string }) => e.questionText === sueldo)).toBe(true);
+    detail = await demoFetch(`/api/workers/${maria.id}`);
+    const sueldoEvents = detail.events.filter(
+      (e: { questionText: string | null }) => e.questionText === sueldo,
+    );
+    expect(sueldoEvents.length).toBeGreaterThanOrEqual(2); // qa_interaction + escalation
+  });
+
+  it.each([
+    ['boss when do you pay me my sueldo'],
+    ['what if ICE comes to the farm'],
+  ])('English forbidden topic "%s" → refusal + escalation, never the language nudge', async (text) => {
+    const before = (await demoFetch('/api/escalations')).length;
+    const reply = await ask(text);
+    expect(reply.bodyText).not.toContain('solo contesto en español');
+    expect(reply.bodyText).toContain('supervisor');
+    expect(reply.bodyText).not.toContain('📄 Fuente');
+    const after = await demoFetch('/api/escalations');
+    expect(after.length).toBe(before + 1);
+    expect(after[0].reason).toContain('Tema restringido');
   });
 
   it('colostrum question → the 4-litros / 22% Brix chunk', async () => {

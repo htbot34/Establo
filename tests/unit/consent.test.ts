@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { isAceptoReply, parseConsentKeyword } from '../../src/server/services/consent.js';
+import {
+  isAceptoReply,
+  isDeletionConfirm,
+  isDeletionRequest,
+  parseConsentKeyword,
+} from '../../src/server/services/consent.js';
 
 describe('consent keywords (ALTA / BAJA / variants)', () => {
   it('detects ALTA in any casing/punctuation', () => {
@@ -36,5 +41,34 @@ describe('consent keywords (ALTA / BAJA / variants)', () => {
     expect(isAceptoReply('no acepto')).toBe(false);
     expect(isAceptoReply('aceptó la vaca el alimento?')).toBe(false);
     expect(isAceptoReply('ok')).toBe(false);
+  });
+});
+
+describe('data deletion keywords (BORRAR MIS DATOS / SI BORRAR)', () => {
+  it('detects the request in any casing/accents and the obvious variants', () => {
+    expect(isDeletionRequest('BORRAR MIS DATOS')).toBe(true);
+    expect(isDeletionRequest('borrar mis datos')).toBe(true);
+    expect(isDeletionRequest('  Borrar mis datos!  ')).toBe(true);
+    expect(isDeletionRequest('quiero borrar mis datos')).toBe(true);
+    expect(isDeletionRequest('borra mis datos')).toBe(true);
+    expect(isDeletionRequest('eliminar mis datos')).toBe(true);
+    expect(isDeletionRequest('borrar datos')).toBe(true);
+  });
+
+  it('never fires on messages that merely mention borrar/datos', () => {
+    expect(isDeletionRequest('¿cómo borro los datos del medidor?')).toBe(false);
+    expect(isDeletionRequest('hay que borrar la pizarra')).toBe(false);
+    expect(isDeletionRequest('mis datos de contacto cambiaron')).toBe(false);
+    expect(isDeletionRequest('')).toBe(false);
+  });
+
+  it('confirms only on the exact SI BORRAR phrase', () => {
+    expect(isDeletionConfirm('SI BORRAR')).toBe(true);
+    expect(isDeletionConfirm('sí borrar')).toBe(true);
+    expect(isDeletionConfirm('sí, borrar')).toBe(true);
+    expect(isDeletionConfirm('si borrar mis datos')).toBe(true);
+    expect(isDeletionConfirm('si')).toBe(false);
+    expect(isDeletionConfirm('borrar')).toBe(false);
+    expect(isDeletionConfirm('no borrar')).toBe(false);
   });
 });

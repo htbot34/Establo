@@ -5,6 +5,7 @@ import { runAuditExport } from '../services/auditPack.js';
 import { runDripTick } from '../services/drip.js';
 import { ingestDocument } from '../services/ingestion.js';
 import { processInbound, type InboundPayload } from '../services/inbound.js';
+import { pruneRawContent } from '../services/retention.js';
 
 export const QUEUES = {
   ingest: 'sop-ingest',
@@ -12,6 +13,7 @@ export const QUEUES = {
   drip: 'drip-tick',
   audit: 'audit-export',
   prune: 'prune-webhook-logs',
+  retentionPrune: 'prune-raw-content',
 } as const;
 
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
@@ -22,6 +24,7 @@ export interface JobPayloads {
   'drip-tick': Record<string, never>;
   'audit-export': { exportId: string };
   'prune-webhook-logs': Record<string, never>;
+  'prune-raw-content': Record<string, never>;
 }
 
 type Handler<Q extends QueueName> = (data: JobPayloads[Q]) => Promise<void>;
@@ -68,5 +71,16 @@ export const handlers: { [Q in QueueName]: Handler<Q> } = {
   'prune-webhook-logs': async () => {
     const cutoff = new Date(Date.now() - 30 * 24 * 3600_000);
     await getDb().delete(webhookLogs).where(lt(webhookLogs.createdAt, cutoff));
+  },
+
+  'prune-raw-content': async () => {
+    const result = await pruneRawContent(getDb());
+    if (result.messagesRedacted + result.eventsRedacted + result.filesDeleted > 0) {
+      // Counts only — the whole point of this job is that content expires.
+      console.log(
+        `🧹 retention: ${result.messagesRedacted} messages redacted, ` +
+          `${result.eventsRedacted} training events redacted, ${result.filesDeleted} files deleted`,
+      );
+    }
   },
 };

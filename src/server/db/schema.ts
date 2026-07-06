@@ -28,6 +28,12 @@ export const orgs = pgTable('orgs', {
   locale: text('locale').notNull().default('es'),
   herdSize: integer('herd_size'),
   settings: jsonb('settings').notNull().default({}),
+  // Org-configured forced-escalation keywords: a question containing one of
+  // these (accent-stripped, case-insensitive, whole-word) is still answered
+  // normally when retrieval is confident, but ALWAYS creates an escalation —
+  // the supervisor wants visibility, not to block grounded answers. See
+  // services/escalationKeywords.ts.
+  escalationKeywords: jsonb('escalation_keywords').$type<string[]>().notNull().default([]),
   // Set when a template delivery fails for a template/category-policy reason;
   // blocks ALL template sends for the org until an owner acknowledges.
   templateSendsPausedAt: timestamp('template_sends_paused_at', { withTimezone: true }),
@@ -68,6 +74,10 @@ export const workers = pgTable(
     name: text('name').notNull(),
     phoneE164: text('phone_e164').notNull(),
     preferredLanguage: text('preferred_language').notNull().default('es'),
+    // Always attach a TTS voice note to Q&A answers and check feedback, not
+    // only when the worker sent a voice note. Module deliveries always carry
+    // audio regardless of this flag.
+    alwaysAudio: boolean('always_audio').notNull().default(false),
     status: text('status', { enum: ['active', 'inactive'] }).notNull().default('active'),
     hiredAt: timestamp('hired_at', { withTimezone: true }),
     lastInboundAt: timestamp('last_inbound_at', { withTimezone: true }),
@@ -88,11 +98,18 @@ export const workers = pgTable(
     pendingAgreementId: uuid('pending_agreement_id'),
     pendingAgreementSentAt: timestamp('pending_agreement_sent_at', { withTimezone: true }),
     pendingAgreementNudges: integer('pending_agreement_nudges').notNull().default(0),
+    // Worker data deletion (BORRAR MIS DATOS): deletion_requested_at is the
+    // pending-confirmation state; deleted_at marks an irreversibly redacted
+    // record (name/phone tombstoned, raw content nulled).
+    deletionRequestedAt: timestamp('deletion_requested_at', { withTimezone: true }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
-    uniqueIndex('workers_phone_uq').on(t.phoneE164),
+    // Org-scoped: the same phone may exist at two different dairies (workers
+    // move between co-op farms; consultants demo with one phone).
+    uniqueIndex('workers_phone_org_uq').on(t.orgId, t.phoneE164),
     index('workers_org_idx').on(t.orgId),
     index('workers_consent_idx').on(t.orgId, t.consentStatus),
   ],
@@ -453,6 +470,24 @@ export const auditExports = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index('audit_exports_org_idx').on(t.orgId)],
+);
+
+/**
+ * Records only THAT a worker-data deletion happened (timestamp + org) — no
+ * worker-identifying columns, on purpose: the dashboard notice built from
+ * this must never let a manager infer which worker deleted their data.
+ */
+export const deletionLog = pgTable(
+  'deletion_log',
+  {
+    id: id(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('deletion_log_org_idx').on(t.orgId, t.createdAt)],
 );
 
 export const webhookLogs = pgTable('webhook_logs', {

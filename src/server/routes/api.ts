@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
-import { and, asc, count, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { requireAuth } from '../auth/session.js';
 import { getDb } from '../db/client.js';
@@ -10,6 +10,7 @@ import {
   agreementSignatures,
   auditExports,
   conversations,
+  deletionLog,
   enrollments,
   escalations,
   FARM_TOPICS,
@@ -45,6 +46,7 @@ import { anthropicAvailable, extractJson, generateText } from '../services/llm.j
 import { isValidVideoUrl, parseVideoUrl } from '../services/video.js';
 import { resumeTemplateSends } from '../services/templateHealth.js';
 import { generateWorkerTranscriptPdf } from '../services/transcripts.js';
+import { deleteWorkerData } from '../services/workerDeletion.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MODULES_PROMPT = path.resolve(__dirname, '../../../prompts/modules.es.md');
@@ -130,11 +132,22 @@ export function registerApiRoutes(app: FastifyInstance): void {
       .orderBy(desc(escalations.createdAt))
       .limit(6);
 
+    // Worker-data deletions, as non-identifying notices (timestamp only) so a
+    // drop in training counts is never mysterious — and never traceable to a
+    // specific worker.
+    const deletionNotices = await db
+      .select({ id: deletionLog.id, deletedAt: deletionLog.createdAt })
+      .from(deletionLog)
+      .where(eq(deletionLog.orgId, orgId))
+      .orderBy(desc(deletionLog.createdAt))
+      .limit(5);
+
     return {
       activeWorkers: Number(activeWorkers.n),
       questionsThisWeek: Number(questionsWeek.n),
       modulesDeliveredThisWeek: Number(modulesWeek.n),
       openKnowledgeGaps: Number(openGaps.n),
+      dataDeletions: deletionNotices,
       sparkline,
       recentEscalations: recentEscalations.map((r) => ({
         id: r.esc.id,
@@ -358,6 +371,8 @@ export function registerApiRoutes(app: FastifyInstance): void {
     notes: z.string().max(2000).optional().nullable(),
     status: z.enum(['active', 'inactive']).optional(),
     jobRole: z.enum(WORKER_ROLES).nullable().optional(),
+    // Always attach TTS audio to answers/check replies (see services/drip.ts).
+    alwaysAudio: z.boolean().optional(),
   });
 
   app.post('/api/workers', async (req, reply) => {
@@ -366,10 +381,15 @@ export function registerApiRoutes(app: FastifyInstance): void {
       return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
     }
     const db = getDb();
+    // Org-scoped duplicate check: the same phone may exist at another dairy,
+    // and answering 409 for other orgs' numbers would be a cross-org
+    // existence oracle.
     const existing = await db
       .select()
       .from(workers)
-      .where(eq(workers.phoneE164, parsed.data.phoneE164));
+      .where(
+        and(eq(workers.phoneE164, parsed.data.phoneE164), eq(workers.orgId, req.authOrg!.id)),
+      );
     if (existing.length > 0) {
       return reply.code(409).send({ error: 'A worker with that phone number already exists' });
     }
@@ -393,13 +413,38 @@ export function registerApiRoutes(app: FastifyInstance): void {
       return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
     }
     const db = getDb();
+    // A deleted (redacted) worker record is immutable.
     const [row] = await db
       .update(workers)
       .set({ ...parsed.data, updatedAt: new Date() })
-      .where(and(eq(workers.id, req.params.id), eq(workers.orgId, req.authOrg!.id)))
+      .where(
+        and(
+          eq(workers.id, req.params.id),
+          eq(workers.orgId, req.authOrg!.id),
+          isNull(workers.deletedAt),
+        ),
+      )
       .returning();
     if (!row) return reply.code(404).send({ error: 'Worker not found' });
     return row;
+  });
+
+  /**
+   * Manager-side "Delete worker data" — the same irreversible redaction the
+   * worker triggers with BORRAR MIS DATOS on WhatsApp.
+   */
+  app.post<{ Params: { id: string } }>('/api/workers/:id/delete-data', async (req, reply) => {
+    const db = getDb();
+    const [worker] = await db
+      .select()
+      .from(workers)
+      .where(and(eq(workers.id, req.params.id), eq(workers.orgId, req.authOrg!.id)));
+    if (!worker) return reply.code(404).send({ error: 'Worker not found' });
+    if (worker.deletedAt) {
+      return reply.code(409).send({ error: 'Worker data was already deleted' });
+    }
+    await deleteWorkerData(db, worker.id);
+    return { ok: true };
   });
 
   app.get<{ Params: { id: string } }>('/api/workers/:id', async (req, reply) => {
@@ -485,6 +530,9 @@ export function registerApiRoutes(app: FastifyInstance): void {
       .from(workers)
       .where(and(eq(workers.id, req.params.id), eq(workers.orgId, req.authOrg!.id)));
     if (!worker) return reply.code(404).send({ error: 'Worker not found' });
+    if (worker.deletedAt) {
+      return reply.code(410).send({ error: 'This worker\'s data was deleted at their request' });
+    }
     if (worker.consentStatus === 'opted_out') {
       return reply.code(409).send({
         error:
@@ -523,6 +571,9 @@ export function registerApiRoutes(app: FastifyInstance): void {
       .from(workers)
       .where(and(eq(workers.id, req.params.id), eq(workers.orgId, req.authOrg!.id)));
     if (!worker) return reply.code(404).send({ error: 'Worker not found' });
+    if (worker.deletedAt) {
+      return reply.code(410).send({ error: 'This worker\'s data was deleted at their request' });
+    }
     const outcome = await requestAgreementSignature(db, worker.id);
     if (outcome === 'blocked') {
       return reply.code(409).send({
@@ -543,6 +594,9 @@ export function registerApiRoutes(app: FastifyInstance): void {
       .from(workers)
       .where(and(eq(workers.id, req.params.id), eq(workers.orgId, req.authOrg!.id)));
     if (!worker) return reply.code(404).send({ error: 'Worker not found' });
+    if (worker.deletedAt) {
+      return reply.code(410).send({ error: 'This worker\'s data was deleted at their request' });
+    }
     const agreement = await getOrCreateActiveAgreement(db, worker.orgId);
     const sig = await recordSignature(db, {
       orgId: worker.orgId,
@@ -609,6 +663,9 @@ export function registerApiRoutes(app: FastifyInstance): void {
       .from(workers)
       .where(and(eq(workers.id, req.params.id), eq(workers.orgId, orgId)));
     if (!worker) return reply.code(404).send({ error: 'Worker not found' });
+    if (worker.deletedAt) {
+      return reply.code(410).send({ error: 'This worker\'s data was deleted at their request' });
+    }
     const [track] = await db
       .select()
       .from(onboardingTracks)
@@ -625,6 +682,9 @@ export function registerApiRoutes(app: FastifyInstance): void {
       .from(workers)
       .where(and(eq(workers.id, req.params.id), eq(workers.orgId, req.authOrg!.id)));
     if (!worker) return reply.code(404).send({ error: 'Worker not found' });
+    if (worker.deletedAt) {
+      return reply.code(410).send({ error: 'This worker\'s data was deleted at their request' });
+    }
     const buffer = await generateWorkerTranscriptPdf(db, worker.id);
     const safe = worker.name.replace(/[^a-zA-Z0-9]+/g, '-');
     return reply
@@ -1044,12 +1104,25 @@ export function registerApiRoutes(app: FastifyInstance): void {
   });
 
   // ── Org settings ──────────────────────────────────────────────────────────
+  app.get('/api/org', async (req) => {
+    const o = req.authOrg!;
+    return {
+      id: o.id,
+      name: o.name,
+      timezone: o.timezone,
+      herdSize: o.herdSize,
+      escalationKeywords: o.escalationKeywords,
+    };
+  });
+
   app.patch('/api/org', async (req, reply) => {
     const parsed = z
       .object({
         name: z.string().min(2).max(120).optional(),
         timezone: z.string().min(1).max(64).optional(),
         herdSize: z.number().int().min(1).max(1_000_000).nullable().optional(),
+        // Forced-escalation keywords (see services/escalationKeywords.ts).
+        escalationKeywords: z.array(z.string().trim().min(1).max(80)).max(50).optional(),
       })
       .safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid input' });
@@ -1059,7 +1132,13 @@ export function registerApiRoutes(app: FastifyInstance): void {
       .set({ ...parsed.data, updatedAt: new Date() })
       .where(eq(orgs.id, req.authOrg!.id))
       .returning();
-    return { id: row.id, name: row.name, timezone: row.timezone, herdSize: row.herdSize };
+    return {
+      id: row.id,
+      name: row.name,
+      timezone: row.timezone,
+      herdSize: row.herdSize,
+      escalationKeywords: row.escalationKeywords,
+    };
   });
 
   // ── Manual drip trigger (all modes; the simulator page uses it in mock) ──

@@ -30,6 +30,12 @@ export function registerStripeRoutes(app: FastifyInstance): void {
       const timestamp = parts.t;
       const signature = parts.v1;
       if (!timestamp || !signature) return reply.code(400).send({ error: 'Bad signature header' });
+      // Replay protection: the timestamp is inside the signed payload, so a
+      // captured webhook can't be replayed later than this tolerance.
+      const ageSeconds = Math.abs(Date.now() / 1000 - Number(timestamp));
+      if (!Number.isFinite(ageSeconds) || ageSeconds > 5 * 60) {
+        return reply.code(400).send({ error: 'Stale webhook timestamp' });
+      }
       const expected = createHmac('sha256', cfg.stripeWebhookSecret)
         .update(`${timestamp}.${raw}`)
         .digest('hex');

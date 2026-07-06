@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
-import { api, timeAgo } from '../api';
+import { api, fmtDate, timeAgo } from '../api';
 import { Card, PageHeader, Spinner, Sparkline, statusBadge } from '../components';
 
 interface OverviewData {
@@ -9,6 +9,7 @@ interface OverviewData {
   questionsThisWeek: number;
   modulesDeliveredThisWeek: number;
   openKnowledgeGaps: number;
+  dataDeletions: Array<{ id: string; deletedAt: string }>;
   sparkline: Array<{ date: string; count: number }>;
   recentEscalations: Array<{
     id: string;
@@ -54,6 +55,21 @@ export default function Overview() {
         <Stat label="Modules delivered (7d)" value={data.modulesDeliveredThisWeek} />
         <Stat label="Open knowledge gaps" value={data.openKnowledgeGaps} accent />
       </div>
+
+      {(data.dataDeletions ?? []).length > 0 && (
+        <Card className="mt-4 p-4">
+          <h2 className="text-sm font-medium text-foreground">Data deletion notices</h2>
+          <ul className="mt-1 space-y-0.5 text-sm text-muted-foreground">
+            {data.dataDeletions.map((d) => (
+              <li key={d.id}>
+                1 worker record was permanently redacted at the worker's request on{' '}
+                <span className="font-mono tabular-nums">{fmtDate(d.deletedAt)}</span>. Their
+                training counts left the records; who asked is deliberately not recorded.
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <Card className="mt-4 p-5">
         <div className="mb-2 flex items-baseline justify-between">

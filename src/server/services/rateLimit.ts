@@ -41,4 +41,30 @@ export function checkRateLimit(
 
 export function resetRateLimits(): void {
   buckets.clear();
+  authFailures.clear();
+}
+
+// ── Auth endpoint throttling (login + setup) ────────────────────────────────
+// Counts FAILED attempts per key (e.g. `login:<ip>`), fail2ban-style, so an
+// attacker gets cut off while legitimate successful logins never accumulate.
+// In-memory, same single-process assumption as the worker rate limiter above.
+
+const AUTH_WINDOW_MS = 15 * 60 * 1000;
+const AUTH_FAILURE_LIMIT = 10;
+
+const authFailures = new Map<string, number[]>();
+
+export function recordAuthFailure(key: string, now: number = Date.now()): void {
+  const list = (authFailures.get(key) ?? []).filter((t) => now - t < AUTH_WINDOW_MS);
+  list.push(now);
+  authFailures.set(key, list);
+}
+
+/** true once a key has accumulated 10 failures inside the 15-minute window. */
+export function isAuthThrottled(key: string, now: number = Date.now()): boolean {
+  const list = authFailures.get(key);
+  if (!list) return false;
+  const fresh = list.filter((t) => now - t < AUTH_WINDOW_MS);
+  authFailures.set(key, fresh);
+  return fresh.length >= AUTH_FAILURE_LIMIT;
 }

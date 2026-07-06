@@ -11,7 +11,10 @@ import { workers, type ConsentMethod, type Worker } from '../db/schema.js';
  */
 
 export {
+  DELETION_CONFIRM_WINDOW_MS,
   isAceptoReply,
+  isDeletionConfirm,
+  isDeletionRequest,
   parseConsentKeyword,
   type ConsentKeyword,
 } from './consentKeywords.js';

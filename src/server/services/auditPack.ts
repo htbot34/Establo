@@ -373,8 +373,12 @@ export async function runAuditExport(db: Db, exportId: string): Promise<void> {
 
   try {
     const [org] = await db.select().from(orgs).where(eq(orgs.id, job.orgId));
-    const workerRows = await db.select().from(workers).where(eq(workers.orgId, job.orgId));
-    const events = await db
+    // Workers who deleted their data (BORRAR MIS DATOS) are excluded from
+    // every export artifact: letter, CSV rows, and per-worker transcripts.
+    const allWorkers = await db.select().from(workers).where(eq(workers.orgId, job.orgId));
+    const workerRows = allWorkers.filter((w) => !w.deletedAt);
+    const deletedWorkerIds = new Set(allWorkers.filter((w) => w.deletedAt).map((w) => w.id));
+    const eventRows = await db
       .select()
       .from(trainingEvents)
       .where(
@@ -385,6 +389,7 @@ export async function runAuditExport(db: Db, exportId: string): Promise<void> {
         ),
       )
       .orderBy(asc(trainingEvents.occurredAt));
+    const events = eventRows.filter((ev) => !deletedWorkerIds.has(ev.workerId));
     const docs = await db.select().from(sopDocuments).where(eq(sopDocuments.orgId, job.orgId));
     const docTitle = new Map(docs.map((d) => [d.id, d.title]));
     const workerById = new Map(workerRows.map((w) => [w.id, w]));
@@ -429,11 +434,14 @@ export async function runAuditExport(db: Db, exportId: string): Promise<void> {
     const letter = await buildLetterPdf(org, period, summaries, events.length);
     await saveBuffer(`${dir}/training-letter.pdf`, letter);
 
-    // 2. CSV of every training event (+ per-worker compliance columns)
+    // 2. CSV of every training event (+ per-worker compliance columns).
+    // Deliberately NO phone column (excess PII in a document that can leave
+    // the farm — the employee name already identifies the worker) and NO
+    // confidence column (an internal retrieval-quality signal, not evidence).
     const csv = toCsv(
       [
-        'event_id', 'occurred_at_utc', 'employee', 'phone', 'event_type', 'topic', 'farm_topic',
-        'confidence', 'question', 'answer', 'source_document',
+        'event_id', 'occurred_at_utc', 'employee', 'event_type', 'topic', 'farm_topic',
+        'question', 'answer', 'source_document',
         'consent_status', 'consent_date_utc', 'cow_care_agreement', 'supervisor_sign_off',
       ],
       events.map((ev) => {
@@ -442,11 +450,9 @@ export async function runAuditExport(db: Db, exportId: string): Promise<void> {
           ev.id,
           ev.occurredAt.toISOString(),
           w?.name ?? ev.workerId,
-          w?.phoneE164 ?? '',
           ev.eventType,
           ev.topic,
           ev.farmTopic ?? 'none',
-          ev.confidence ?? '',
           ev.questionText ?? '',
           ev.answerText ?? '',
           ev.sourceDocumentId ? (docTitle.get(ev.sourceDocumentId) ?? '') : '',

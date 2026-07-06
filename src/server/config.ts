@@ -25,6 +25,9 @@ function buildConfig(env: NodeJS.ProcessEnv) {
     port: Number(env.PORT ?? 8787),
     publicBaseUrl: (env.PUBLIC_BASE_URL ?? 'http://localhost:8787').replace(/\/$/, ''),
     sessionSecret,
+    // Required on EVERY /api/auth/setup call (multi-tenant instance — there
+    // is no "first user" exception). Unset → setup is disabled.
+    setupToken: env.SETUP_TOKEN || undefined,
     dataDir: env.DATA_DIR ?? './data/storage',
     databaseUrl: env.DATABASE_URL ?? 'postgres://establo:establo@localhost:5432/establo',
 
@@ -46,7 +49,10 @@ function buildConfig(env: NodeJS.ProcessEnv) {
     twilioAccountSid: env.TWILIO_ACCOUNT_SID || undefined,
     twilioAuthToken: env.TWILIO_AUTH_TOKEN || undefined,
     twilioWhatsAppFrom: env.TWILIO_WHATSAPP_FROM ?? 'whatsapp:+14155238886',
-    twilioValidateSignature: bool(env.TWILIO_VALIDATE_SIGNATURE, runMode === 'production'),
+    // Fail-closed: validation is ON everywhere outside mock unless explicitly
+    // disabled (sandbox used to default OFF, which silently accepted forged
+    // webhooks). Mock skips validation via the isMock guard in the route.
+    twilioValidateSignature: bool(env.TWILIO_VALIDATE_SIGNATURE, runMode !== 'mock'),
     // Twilio Content template SIDs, issued once Meta approves each template.
     // Required for proactive drip in production; undefined in mock/dev.
     twilioContentSidModuleNotify: env.TWILIO_CONTENT_SID_MODULE_NOTIFY || undefined,
@@ -59,6 +65,11 @@ function buildConfig(env: NodeJS.ProcessEnv) {
 
     dripCron: env.DRIP_CRON ?? '*/15 * * * *',
     jobsInline: bool(env.JOBS_INLINE, false),
+
+    // Days to keep RAW message/interaction content (bodies, transcripts,
+    // media, training-event question/answer text). Derived training-
+    // documentation fields are never pruned. See services/retention.ts.
+    rawContentRetentionDays: Number(env.RAW_CONTENT_RETENTION_DAYS ?? 180),
 
     // SMS fallback seam for paused WhatsApp templates (stub transport only).
     smsFallbackEnabled: bool(env.SMS_FALLBACK_ENABLED, false),

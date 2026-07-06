@@ -65,7 +65,7 @@ answers; that is the expected dev setup. Useful commands:
 ```bash
 pnpm ask "¿cuánto tiempo dejo el pre-dip?"   # retrieval+answer smoke test (CLI)
 pnpm eval                                     # run the eval set, print scorecard
-pnpm test                                     # 121 unit + integration tests
+pnpm test                                     # 296 tests (239 unit + 57 integration)
 pnpm sample-image                             # regenerate samples/sop-photo-sample.png
 ```
 
@@ -296,7 +296,26 @@ manifest stays empty and behavior is identical to today.
   **POLICY-SCOPE.md** for the purpose-restriction posture).
 - Prompt-injection resistance: SOP chunks are data; the system prompt orders
   Claude to ignore instructions found inside them.
+- `/api/auth/setup` requires a `SETUP_TOKEN` on **every** call (multi-tenant —
+  no "first user" exception); login/setup carry a per-IP failure throttle, and
+  login verifies against a dummy hash on unknown emails so response timing
+  never reveals which factor failed.
 - Secrets only via env; `.env.example` documents every variable.
+
+## Data governance
+
+Establo's training log is, structurally, an employer-visible, phone-linked
+record of a mostly foreign-born workforce's conversations — the data
+practices are engineered for that reality, not bolted on. See
+**[DATA-POLICY.md](DATA-POLICY.md)** (plain English: what's collected, the
+180-day raw-content retention window, the worker's BORRAR MIS DATOS deletion
+right, the legal-request posture, subprocessors) and the worker-facing
+Spanish summary **[POLITICA-DE-DATOS.es.md](POLITICA-DE-DATOS.es.md)**.
+Highlights, each enforced in code and pinned by tests: immigration/legal
+questions never enter employer-visible records verbatim (only a category
+marker); raw message content expires on a nightly schedule; exports carry no
+phone numbers; deletion needs no manager approval and is invisible to the
+manager beyond an anonymous notice.
 
 ## Project layout
 
@@ -312,6 +331,7 @@ samples/            sop-photo-sample.png for the OCR path
 ```
 
 Also see **DEPLOY.md** (Fly.io walkthrough), **RUNBOOK.md** (operations),
-**DECISIONS.md** (implementation choices and trade-offs), and
+**DECISIONS.md** (implementation choices and trade-offs),
 **POLICY-SCOPE.md** (why Establo is a purpose-restricted assistant, not a
-general-purpose AI chatbot, with pointers to the enforcing code).
+general-purpose AI chatbot, with pointers to the enforcing code), and
+**DATA-POLICY.md** (data handling, retention, worker deletion rights).

@@ -12,7 +12,10 @@
 import { ApiError } from '../api';
 import { ES } from '../../server/services/messages.es';
 import {
+  DELETION_CONFIRM_WINDOW_MS,
   isAceptoReply,
+  isDeletionConfirm,
+  isDeletionRequest,
   parseConsentKeyword,
   renewalDue,
 } from '../../server/services/consentKeywords';
@@ -48,6 +51,7 @@ interface Store {
   agreements: Row[];
   signatures: Row[];
   exports: Row[];
+  deletions: Row[];
 }
 
 const fixture = fixtureJson as unknown as Omit<Store, 'authed' | 'exports'>;
@@ -62,6 +66,7 @@ function db(): Store {
       agreements: data.agreements ?? [],
       signatures: data.signatures ?? [],
       exports: [],
+      deletions: [],
     };
   }
   return store;
@@ -249,6 +254,40 @@ function firstName(name: string): string {
   return name.split(/\s+/)[0] ?? name;
 }
 
+// Mirror of services/workerDeletion.ts: irreversible in-memory redaction.
+function redactWorkerData(workerId: string): void {
+  const s = db();
+  const worker = s.workers.find((w) => w.id === workerId);
+  if (!worker || worker.deletedAt) return;
+  const convIds = new Set(s.conversations.filter((c) => c.workerId === workerId).map((c) => c.id));
+  for (const m of s.messages) {
+    if (!convIds.has(m.conversationId)) continue;
+    m.bodyText = null;
+    m.transcriptText = null;
+    m.mediaUrl = null;
+    m.audioReplyUrl = null;
+  }
+  for (const e of s.events) {
+    if (e.workerId !== workerId) continue;
+    e.questionText = null;
+    e.answerText = null;
+  }
+  for (const esc of s.escalations) {
+    if (esc.workerId === workerId) esc.questionText = 'Eliminado a petición del trabajador';
+  }
+  worker.name = 'Trabajador eliminado';
+  worker.phoneE164 = `deleted:${uuid()}`;
+  worker.notes = null;
+  worker.status = 'inactive';
+  worker.consentStatus = 'opted_out';
+  worker.deletedAt = nowIso();
+  worker.deletionRequestedAt = null;
+  worker.pendingAgreementId = null;
+  worker.pendingAgreementSentAt = null;
+  worker.pendingAgreementNudges = 0;
+  s.deletions.push({ id: uuid(), orgId: s.org.id, createdAt: nowIso() });
+}
+
 // ── drip engine mirror ───────────────────────────────────────────────────────
 function deliverModule(delivery: Row): boolean {
   const s = db();
@@ -411,6 +450,24 @@ function handleInbound(workerId: string, kind: 'text' | 'voice', text: string): 
     pushMessage(workerId, { direction: 'outbound', type: 'text', bodyText: ES.optInConfirm });
     return;
   }
+  // ── Worker data deletion (BORRAR MIS DATOS) — honored in any consent state ──
+  if (isDeletionRequest(text)) {
+    worker.deletionRequestedAt = nowIso();
+    pushMessage(workerId, { direction: 'outbound', type: 'text', bodyText: ES.deletionConfirmPrompt });
+    return;
+  }
+  if (isDeletionConfirm(text)) {
+    const requestedAt = worker.deletionRequestedAt ? new Date(worker.deletionRequestedAt).getTime() : 0;
+    if (requestedAt && Date.now() - requestedAt <= DELETION_CONFIRM_WINDOW_MS) {
+      pushMessage(workerId, { direction: 'outbound', type: 'text', bodyText: ES.deletionDone });
+      redactWorkerData(workerId);
+      return;
+    }
+    worker.deletionRequestedAt = nowIso();
+    pushMessage(workerId, { direction: 'outbound', type: 'text', bodyText: ES.deletionConfirmPrompt });
+    return;
+  }
+
   if (worker.consentStatus === 'opted_out') {
     pushMessage(workerId, { direction: 'outbound', type: 'text', bodyText: ES.optedOutReminder });
     return;
@@ -501,8 +558,9 @@ function handleInbound(workerId: string, kind: 'text' | 'voice', text: string): 
     case 'question': {
       // Mirror of processInbound: a non-Spanish free-form question gets the
       // Spanish-only nudge (a normal interaction, not an escalation) instead of
-      // running retrieval.
-      if (!looksSpanish(text)) {
+      // running retrieval — unless it hits the forbidden-topic guard, which
+      // must always win (refusal + escalation, in any language).
+      if (!looksSpanish(text) && !matchForbiddenTopic(text)) {
         replyText(ES.spanishOnly);
         logEvent(workerId, {
           eventType: 'qa_interaction',
@@ -516,15 +574,21 @@ function handleInbound(workerId: string, kind: 'text' | 'voice', text: string): 
       const guard = matchForbiddenTopic(text);
       if (guard) {
         replyText(ES.forbidden);
+        // Mirror of processInbound: immigration/legal guard hits store only a
+        // category marker in employer-visible records, never the exact words.
+        const recordedQuestion =
+          guard.category === 'immigration' || guard.category === 'legal'
+            ? `Tema restringido: ${guard.category === 'immigration' ? 'migración' : 'legal'}`
+            : text;
         logEvent(workerId, {
           eventType: 'qa_interaction',
           topic: guard.topic,
-          questionText: text,
+          questionText: recordedQuestion,
           answerText: ES.forbidden,
           confidence: 'not_found',
         });
-        addEscalation(workerId, text, 'Tema restringido (sueldo/legal/migración/dosis)');
-        logEvent(workerId, { eventType: 'escalation', topic: guard.topic, questionText: text, confidence: 'not_found' });
+        addEscalation(workerId, recordedQuestion, 'Tema restringido (sueldo/legal/migración/dosis)');
+        logEvent(workerId, { eventType: 'escalation', topic: guard.topic, questionText: recordedQuestion, confidence: 'not_found' });
         return;
       }
       const hit = retrieve(text);
@@ -661,6 +725,10 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
     }
     return {
       activeWorkers: s.workers.filter((w) => w.status === 'active').length,
+      dataDeletions: [...s.deletions]
+        .sort((a, b) => ts(b.createdAt) - ts(a.createdAt))
+        .slice(0, 5)
+        .map((d) => ({ id: d.id, deletedAt: d.createdAt })),
       questionsThisWeek: s.events.filter((e) => e.eventType === 'qa_interaction' && ts(e.occurredAt) > weekAgo).length,
       modulesDeliveredThisWeek: s.events.filter((e) => e.eventType === 'module_delivered' && ts(e.occurredAt) > weekAgo).length,
       openKnowledgeGaps: s.escalations.filter((e) => e.status === 'open').length,
@@ -781,6 +849,12 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
       });
     }
     return { enrollmentId: enr.id, created: true };
+  }
+  if (seg[1] === 'workers' && seg[2] && seg[3] === 'delete-data' && method === 'POST') {
+    const worker = s.workers.find((w) => w.id === seg[2]) ?? fail(404, 'Worker not found');
+    if (worker.deletedAt) fail(409, 'Worker data was already deleted');
+    redactWorkerData(worker.id);
+    return { ok: true };
   }
   if (seg[1] === 'workers' && seg[2] && !seg[3] && method === 'GET') {
     const worker = s.workers.find((w) => w.id === seg[2]) ?? fail(404, 'Worker not found');
@@ -1030,14 +1104,22 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
   if (route === 'POST /api/audit/exports') {
     const start = new Date(`${body.periodStart}T00:00:00Z`);
     const end = new Date(`${body.periodEnd}T23:59:59.999Z`);
-    const inRange = s.events.filter((e) => ts(e.occurredAt) >= start.getTime() && ts(e.occurredAt) <= end.getTime());
+    // Mirror of auditPack.ts: deleted workers are out of every export.
+    const deletedIds = new Set(s.workers.filter((w) => w.deletedAt).map((w) => w.id));
+    const inRange = s.events.filter(
+      (e) =>
+        ts(e.occurredAt) >= start.getTime() &&
+        ts(e.occurredAt) <= end.getTime() &&
+        !deletedIds.has(e.workerId),
+    );
     const esc = (v: unknown) => {
       const str = v === null || v === undefined ? '' : String(v);
       return /[",\n\r]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
     };
     const docTitle = new Map(s.documents.map((d) => [d.id, d.title]));
     const lines = [
-      'event_id,occurred_at_utc,employee,phone,event_type,topic,farm_topic,confidence,question,answer,source_document,consent_status,consent_date_utc,cow_care_agreement,supervisor_sign_off',
+      // Mirror of auditPack.ts: no phone, no confidence — see that file.
+      'event_id,occurred_at_utc,employee,event_type,topic,farm_topic,question,answer,source_document,consent_status,consent_date_utc,cow_care_agreement,supervisor_sign_off',
       ...inRange.map((e) => {
         const w = s.workers.find((w) => w.id === e.workerId);
         const sig = w ? latestSignature(w.id) : null;
@@ -1053,9 +1135,9 @@ export async function demoFetch(path: string, opts: { method?: string; body?: un
               .join('; ')
           : '';
         return [
-          e.id, e.occurredAt, w?.name ?? '', w?.phoneE164 ?? '', e.eventType, e.topic,
+          e.id, e.occurredAt, w?.name ?? '', e.eventType, e.topic,
           e.farmTopic ?? 'none',
-          e.confidence ?? '', e.questionText ?? '', e.answerText ?? '',
+          e.questionText ?? '', e.answerText ?? '',
           e.sourceDocumentId ? (docTitle.get(e.sourceDocumentId) ?? '') : '',
           w?.consentStatus ?? '', w?.consentedAt ?? '',
           sig ? `signed v${sig.agreementVersion} ${String(sig.signedAt).slice(0, 10)} via ${sig.method}` : 'unsigned',

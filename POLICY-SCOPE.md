@@ -81,3 +81,11 @@ unanswerable set, including out-of-scope questions.
   revision of this document first.
 - `prompts/answer.es.md` is treated as a versioned contract: every edit
   requires re-running `pnpm eval` (see `RUNBOOK.md`).
+- **No model training on worker data, anywhere in the chain.** API traffic to
+  Anthropic (answers/OCR) and OpenAI (embeddings/Whisper/TTS) is not used to
+  train their models under their commercial API terms, and per the WhatsApp
+  Business Solution Terms, Business Solution Data is never used to train or
+  improve any AI model.
+- **Eval sets are synthetic.** Establo's evaluation sets are generated from
+  seeded/sample SOPs only — never from real worker conversations. (See
+  `DATA-POLICY.md` for the full data-handling posture.)

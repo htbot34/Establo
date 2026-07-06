@@ -353,3 +353,173 @@ present it pre-renders real OGG/Opus lesson audio (reusing `synthesizeSpeech` +
 entry exists and falls back to the placeholder otherwise. With no key the
 manifest stays empty and behavior is identical to before — the production
 WhatsApp path is unchanged (it already synthesizes real TTS).
+
+## Hardening pass — safety, data governance, security (July 2026)
+
+Merged output of two independent red-team passes (one against the code, one
+against the 2026 market/regulatory context). Ordering mattered: the schema
+change (org-scoped phones) landed before the deletion feature built on it,
+and the worker-facing disclosure and DATA-POLICY.md were written last so
+every claim in them was already true of shipped code.
+
+- **Guard hardening.** The pre-LLM `RULES` were extended across all four
+  categories for real adversarial phrasing (la migra, deport*, standalone
+  ICE, redadas, ilegal/indocumentad*; cheque/quincena/raya and pay-scoped
+  earn-verbs; denuncia/acoso/queja/scoped derechos; vacuna/pastilla/le
+  inyecto). Every addition was checked against real dairy vocabulary that
+  sits one character away: "el corte" (silage) vs "la corte" (court, the
+  only form added), "ganado" (cattle) vs "gano" (earnings), "acostada"
+  (downed cow) vs "acosa", "vacuno" (bovine) vs "vacuna". A new unit table
+  pins ~40 must-refuse phrasings and the must-not-match dairy set, because a
+  false positive here converts a legitimate training question into a refusal.
+- **Language gate ordering.** The Spanish-only nudge returned before
+  `answerQuestion()` ran, so forbidden topics in English never reached the
+  guard or a human. Fixed with an exemption in the gate condition rather than
+  duplicating the guard-and-escalate logic in `inbound.ts` — one escalation
+  code path, not two that drift.
+- **Org-scoped phone uniqueness.** Workers move between co-op-affiliated
+  dairies and consultants demo with one phone across org accounts, so
+  `workers_phone_uq` became `(org_id, phone_e164)`. The duplicate pre-check
+  is org-scoped too — the old global 409 doubled as a cross-org existence
+  oracle. The inbound resolver picks deterministically (most recent inbound,
+  else newest) when one number is active at two orgs; per-org sender numbers
+  are the real long-term answer and are out of scope here.
+- **Escalation redaction (immigration/legal only).** `AnswerResult` now
+  carries `forbiddenCategory` (previously dropped — three categories collapse
+  to topic 'Otro'), and all three employer-visible write sites (escalation
+  row, qa_interaction event, escalation event) store a category marker
+  instead of the worker's words. `training_events.question_text` is exactly
+  what the audit CSV exports, so redacting only `escalations` would have left
+  the real exposure untouched. Employment and medical_dosing stay verbatim
+  deliberately: a wage question is not the risk class of a worker revealing
+  fear about their status. Deletion also rewrites escalation text (the
+  column is NOT NULL, so it gets a neutral marker rather than null).
+- **Raw-content retention.** New `prune-raw-content` cron (4:00 UTC,
+  `RAW_CONTENT_RETENTION_DAYS` default 180) nulls message bodies/transcripts/
+  media and training-event question/answer text, deleting local audio files
+  first; untracked inbound voice-note files are swept by mtime. Derived
+  training-documentation fields are never touched — they are the product.
+  The short window is a legal-posture choice: data not held cannot be
+  produced.
+- **Worker deletion (BORRAR MIS DATOS).** Strict whole-message keywords
+  (like ACEPTO) with a plain-Spanish confirm and a 24h expiry on the pending
+  state (pending-agreement pattern). Honored in any consent state, including
+  opted_out. Redaction tombstones name/phone, nulls content everywhere, sets
+  status inactive + consent opted_out so every send gate fails closed, and
+  writes a deliberately non-identifying `deletion_log` row (org + timestamp
+  only) that feeds an Overview notice — the training-count drop is explained
+  without telling a manager which worker got scared. The dashboard "Delete
+  worker data" action shares the same code path.
+- **Disclosure rewrite.** Keeps the employer-visibility sentence (honesty is
+  the point), scopes the "your exact words aren't shared" claim to legal/
+  migración only (employment stays verbatim, so a broader claim would be
+  false), and adds retention, BORRAR MIS DATOS, and the court-order-only
+  posture. Pinned by a word-for-word snapshot test.
+- **Export minimization.** CSV loses `phone` (excess PII in a document that
+  leaves the farm; the name already identifies) and `confidence`; the
+  transcript PDF loses its `Grounding:` line — both are internal
+  retrieval-quality signals, not compliance evidence. `source_chunk_ids`
+  verified absent from all exports. Deleted workers are excluded from every
+  export artifact.
+- **PII sweep.** Verified every log site uses `maskPhone` (inbound,
+  sendToWorker, transports, template refusals). Raw phones live only in the
+  DB source-of-truth tables, `webhook_logs.payload` (30-day prune), and
+  manager-facing dashboard responses, which are functional. No changes
+  needed.
+- **Setup token + auth throttling.** `/api/auth/setup` requires `SETUP_TOKEN`
+  on every call — NOT "lock after the first user", which would silently break
+  onboarding a second dairy on this multi-tenant instance. Constant-time
+  compare; unset disables setup. Login/setup throttle at 10 *failed*
+  attempts / 15 min / IP (fail2ban-style — successful logins never count, so
+  a busy manager can't lock themselves out). Login verifies a dummy argon2
+  hash on unknown emails to close the user-enumeration timing oracle.
+- **Signature validation default.** `twilioValidateSignature` now defaults on
+  for everything except mock (was: production only). README/.env.example
+  already described sandbox as on-by-default — the code was the thing that
+  was wrong.
+- **Consent race: documented, not "fixed".** pg-boss v10 runs one worker per
+  queue (`batchSize: 1`) and awaits the handler before the next fetch, so
+  inbound jobs are strictly serial on the single machine fly.toml pins — the
+  BAJA/ALTA interleave is not currently reachable, and a compare-and-set
+  would have been speculative complexity. RUNBOOK gained a "Scaling
+  constraint" section: `min_machines_running` stays 1 until consent writes
+  get a DB-level guard. A last-keyword-wins test pins the invariant.
+- **DATA-POLICY.md.** Written last so it documents shipped behavior, not
+  aspiration; plain English for a dairy owner's lawyer and a journalist, with
+  a 3rd–5th-grade Spanish worker summary (`POLITICA-DE-DATOS.es.md`). States
+  the no-voluntary-disclosure/compulsory-process-only posture and ties the
+  180-day window to it explicitly.
+- **Repo public face.** Proprietary LICENSE (source-visible, not open
+  source); POLICY-SCOPE's operating commitments extended with the
+  no-model-training subprocessor posture and the synthetic-eval-sets
+  commitment; README gained a Data governance section.
+- **Stripe replay protection.** Signed webhooks older than 5 minutes are
+  refused — landed before ENABLE_BILLING is ever real.
+
+## Three scoped features (July 2026)
+
+### English medical-dosing guard coverage
+
+Mixed crews ask dosing questions in English too, so the `medical_dosing`
+rules gained English patterns (dose/dosage, penicillin, oxytocin,
+antibiotic(s), vaccine/vaccinat*, "injection of", how-much-medicine
+phrasings, pill(s), "how many/much ml|cc|units"). Same discipline as the
+Spanish hardening pass — every addition checked against the nearest real
+word: "does" is one transposition from "dose" (word-bounded `dose` never
+matches it), "vacuum" is the closest word to the double-c "vaccin" stem,
+"pillars" contains "pill", and Spanish "dos" (two) sits one letter from
+"dose". "injection of" mirrors `/\binyeccion de\b/` — the required "of"
+keeps status reports ("the injection site is swollen") out. Bare
+"medicine"/"medication" deliberately does NOT match ("the medicine cabinet
+is locked" is not a dosing question); only how-much/what-do-I-give framings
+do, mirroring "cuanto medicamento"/"que medicina le doy". The guard test
+table gained 13 English must-refuse phrasings and 7 must-not-match farm
+sentences.
+
+### Per-worker always-send-audio toggle
+
+- `workers.always_audio` (boolean, default false, migration 0007): attach a
+  TTS voice note to Q&A answers and comprehension-check feedback even when
+  the worker typed — some workers text short questions but need to LISTEN to
+  the answer. Default off, so every existing worker keeps today's behavior
+  (voice reply only for voice notes) until a manager flips the toggle.
+- The decision is one pure function, `shouldSendAudio(wasVoice, alwaysAudio)`
+  in `services/drip.ts`, used by BOTH reply paths (question answers in
+  `inbound.ts`, check feedback in `drip.ts`) so they cannot drift; all four
+  input combinations are unit-pinned. Module deliveries do not consult the
+  flag — they always attach audio, unchanged.
+- Exposed through the existing worker PATCH endpoint (the detail GET already
+  returns the whole row) plus a toggle card on the worker detail page — no
+  new route surface.
+
+### Org-configurable forced-escalation keywords
+
+- `orgs.escalation_keywords` (jsonb string array, default `[]`, migration
+  0008) — jsonb over `text[]` to match every other string-list column in the
+  schema (`applies_to_roles`, `check_options_es`, `source_chunk_ids`).
+- Matching (`services/escalationKeywords.ts`) reuses the guard's
+  normalization: accent-stripped lowercase, whole-word. Word boundaries are
+  lookarounds (`(?<!\w)…(?!\w)`) rather than `\b`, because `\b` silently
+  never matches when a keyword starts or ends with a non-word character
+  ("lavado (CIP)"). Keywords are regex-escaped, and the escalation reason
+  carries the manager's own spelling of the keyword, not the normalized form.
+- Ordering in the question path: the forbidden-topic guard wins — a guard hit
+  already refuses + escalates with its own reason, and a second row would be
+  noise (it would also complicate the immigration/legal redaction; keyword
+  hits can only exist when the guard did NOT fire, so the worker's words are
+  never redacted here). The keyword check runs before answering; a hit NEVER
+  blocks the answer — the supervisor wants visibility, not a gag — but always
+  writes an escalation row ("Palabra clave configurada por la granja:
+  <keyword>") plus an `escalation` training event, the same coexistence
+  pattern as not_found escalations next to their qa_interaction log. A
+  keyword question that is ALSO not answerable produces two escalation rows
+  with distinct reasons, deliberately: "the farm cares about this topic" and
+  "the SOPs don't cover it" are different signals.
+- GET/PATCH live on `/api/org` (new GET; the existing PATCH gained the
+  field), edited as a one-keyword-per-line textarea in Settings. The static
+  demo has no `GET /api/org`, so the section hides itself there instead of
+  showing a dead control.
+- Integration coverage (`tests/integration/scopedFeatures.test.ts`) runs the
+  real inbound pipeline: accented keyword vs accentless question, escalation
+  row + event created next to a grounded answer, guard precedence, and the
+  always-audio voice-note attachment for text questions.

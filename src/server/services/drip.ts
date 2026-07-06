@@ -39,6 +39,17 @@ export function ttsVariant(text: string): string {
 }
 
 /**
+ * Reply-audio policy for question answers and check feedback: attach a TTS
+ * voice note when the worker sent a voice note (mirror their modality) OR
+ * when the per-worker always-audio toggle is set (workers who type but need
+ * to listen). Module deliveries are NOT gated by this — they always carry
+ * audio.
+ */
+export function shouldSendAudio(wasVoice: boolean, alwaysAudio: boolean): boolean {
+  return wasVoice || alwaysAudio;
+}
+
+/**
  * Enroll a worker in a track: creates the enrollment plus one
  * module_delivery per module, scheduled at day_offset/send_hour_local in the
  * org's timezone. Idempotent per (worker, track) while an enrollment is active.
@@ -246,7 +257,9 @@ export async function handleCheckAnswer(
         module.checkCorrectIndex + 1,
         module.checkOptionsEs[module.checkCorrectIndex],
       );
-  const audio = opts.wasVoice ? await synthesizeSpeech(ttsVariant(reply)) : null;
+  const audio = shouldSendAudio(opts.wasVoice, worker.alwaysAudio)
+    ? await synthesizeSpeech(ttsVariant(reply))
+    : null;
   await sendToWorker(db, worker.id, { text: reply, audioUrl: audio?.publicUrl, kind: 'reply' });
 
   await logTrainingEvent(db, {

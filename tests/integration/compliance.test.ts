@@ -26,6 +26,7 @@ import {
   onboardingTracks,
   orgs,
   sopDocuments,
+  trainingEvents,
   users,
   workers,
 } from '../../src/server/db/schema.js';
@@ -298,6 +299,24 @@ describe('BAJA opt-out: blocks everything until ALTA', () => {
     expect(tick2.delivered).toBe(1);
   });
 
+  it('the LAST consent keyword always wins (BAJA→ALTA and ALTA→BAJA)', async () => {
+    // pg-boss processes inbound-message jobs serially (one worker,
+    // batchSize 1, handler awaited before the next fetch), so keywords from
+    // one worker can never interleave in a single-machine deployment — see
+    // RUNBOOK "Scaling constraint". This pins the resulting invariant.
+    const w = await makeWorker({ consentStatus: 'opted_in', lastInboundAt: new Date(), disclosureSentAt: new Date() });
+
+    await injectInbound(w.phoneE164, 'BAJA');
+    await injectInbound(w.phoneE164, 'ALTA');
+    let [after] = await db.select().from(workers).where(eq(workers.id, w.id));
+    expect(after.consentStatus).toBe('opted_in');
+
+    await injectInbound(w.phoneE164, 'ALTA');
+    await injectInbound(w.phoneE164, 'BAJA');
+    [after] = await db.select().from(workers).where(eq(workers.id, w.id));
+    expect(after.consentStatus).toBe('opted_out');
+  });
+
   it('honors the variant "no más mensajes"', async () => {
     const w = await makeWorker({ consentStatus: 'opted_in', lastInboundAt: new Date(), disclosureSentAt: new Date() });
     await injectInbound(w.phoneE164, 'no más mensajes');
@@ -417,6 +436,9 @@ describe('supervisor sign-off + FARM audit pack', () => {
   it('owner confirms a completed track; signer name/role/time recorded', async () => {
     signedWorker = await makeWorker({
       name: 'Trabajadora Auditada',
+      // 'general' carries all five FARM CE areas, so the letter's gap flags
+      // (euthanasia, fitness to transport) below stay expected for her role.
+      jobRole: 'general',
       consentStatus: 'opted_in',
       consentedAt: new Date('2026-01-15T12:00:00Z'),
       lastInboundAt: new Date(),
@@ -716,6 +738,119 @@ describe('cross-tenant isolation for the new tables', () => {
       payload: { attestedBy: 'Owner A' },
     });
     expect(res.statusCode).toBe(409);
+  });
+});
+
+describe('org-scoped worker phone uniqueness', () => {
+  it('two orgs can each enroll the same phone; a same-org duplicate still 409s', async () => {
+    const shared = '+15007779999';
+    const headersA = await ownerSession('owner-a@test.local', 'password-aaa');
+    const headersB = await ownerSession('owner-b@test.local', 'password-bbb');
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/workers',
+      headers: headersA,
+      payload: { name: 'Consultor Compartido', phoneE164: shared },
+    });
+    expect(first.statusCode).toBe(200);
+
+    // Same phone at a DIFFERENT dairy — allowed (and no cross-org 409 oracle).
+    const otherOrg = await app.inject({
+      method: 'POST',
+      url: '/api/workers',
+      headers: headersB,
+      payload: { name: 'Consultor Compartido', phoneE164: shared },
+    });
+    expect(otherOrg.statusCode).toBe(200);
+    expect(JSON.parse(otherOrg.body).orgId).toBe(orgB.id);
+
+    // Same phone at the SAME dairy — still a data-entry mistake.
+    const dup = await app.inject({
+      method: 'POST',
+      url: '/api/workers',
+      headers: headersA,
+      payload: { name: 'Duplicado', phoneE164: shared },
+    });
+    expect(dup.statusCode).toBe(409);
+  });
+});
+
+describe('forbidden topics beat the Spanish-only language gate', () => {
+  it.each([
+    ['boss when do you pay me my sueldo'],
+    ['what if ICE comes to the farm'],
+  ])('"%s" → forbidden refusal + escalation, not the language nudge', async (question) => {
+    const w = await makeWorker({
+      consentStatus: 'opted_in',
+      lastInboundAt: new Date(),
+      disclosureSentAt: new Date(),
+    });
+    await injectInbound(w.phoneE164, question);
+
+    const texts = await outboundTexts(w.id);
+    expect(texts.some((t) => t.includes('solo contesto en español'))).toBe(false);
+    expect(texts.some((t) => t.includes('con tu supervisor'))).toBe(true);
+
+    const escRows = await db
+      .select()
+      .from(escalations)
+      .where(and(eq(escalations.workerId, w.id), like(escalations.reason, '%Tema restringido%')));
+    expect(escRows).toHaveLength(1);
+  });
+});
+
+describe('immigration/legal escalations are redacted in employer-visible records', () => {
+  it('an immigration question stores only a category marker in all three write sites', async () => {
+    const w = await makeWorker({
+      consentStatus: 'opted_in',
+      lastInboundAt: new Date(),
+      disclosureSentAt: new Date(),
+    });
+    const question = 'que hago si llega ICE al establo';
+    await injectInbound(w.phoneE164, question);
+
+    const [esc] = await db.select().from(escalations).where(eq(escalations.workerId, w.id));
+    const events = await db
+      .select()
+      .from(trainingEvents)
+      .where(eq(trainingEvents.workerId, w.id));
+    const qa = events.find((e) => e.eventType === 'qa_interaction');
+    const escEvent = events.find((e) => e.eventType === 'escalation');
+
+    for (const stored of [esc.questionText, qa!.questionText, escEvent!.questionText]) {
+      expect(stored).toBe('Tema restringido: migración');
+      // No distinctive word of the worker's message survives anywhere.
+      for (const word of ['llega', 'ice', 'ICE', 'establo']) {
+        expect(stored).not.toContain(word);
+      }
+    }
+    // The worker still got the refusal and a human was still alerted.
+    expect(esc.reason).toContain('Tema restringido');
+    const texts = await outboundTexts(w.id);
+    expect(texts.some((t) => t.includes('con tu supervisor'))).toBe(true);
+  });
+
+  it('an employment (sueldo) question stays verbatim in all three — no over-redaction', async () => {
+    const w = await makeWorker({
+      consentStatus: 'opted_in',
+      lastInboundAt: new Date(),
+      disclosureSentAt: new Date(),
+    });
+    const question = '¿me puedes subir el sueldo este mes?';
+    await injectInbound(w.phoneE164, question);
+
+    const [esc] = await db.select().from(escalations).where(eq(escalations.workerId, w.id));
+    const events = await db
+      .select()
+      .from(trainingEvents)
+      .where(eq(trainingEvents.workerId, w.id));
+    const qa = events.find((e) => e.eventType === 'qa_interaction');
+    const escEvent = events.find((e) => e.eventType === 'escalation');
+
+    expect(esc.questionText).toBe(question);
+    expect(qa!.questionText).toBe(question);
+    expect(escEvent!.questionText).toBe(question);
   });
 });
 

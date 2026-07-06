@@ -12,6 +12,8 @@ let started = false;
  *   drip-tick           cron: scheduled module delivery + reminders
  *   audit-export        audit pack generation
  *   prune-webhook-logs  cron: drop webhook logs older than 30 days
+ *   prune-raw-content   cron: null raw message/interaction content older than
+ *                       RAW_CONTENT_RETENTION_DAYS (derived training fields kept)
  */
 export async function startJobs(): Promise<void> {
   if (started) return;
@@ -40,6 +42,8 @@ export async function startJobs(): Promise<void> {
 
   await boss.schedule(QUEUES.drip, config().dripCron, {}, { tz: 'UTC' });
   await boss.schedule(QUEUES.prune, '0 3 * * *', {}, { tz: 'UTC' });
+  // Staggered an hour after the webhook-log prune.
+  await boss.schedule(QUEUES.retentionPrune, '0 4 * * *', {}, { tz: 'UTC' });
   started = true;
   console.log(`✓ pg-boss started (drip cron: ${config().dripCron})`);
 }
