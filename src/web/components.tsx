@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 import { cn } from './lib/utils';
+import { t as tKey, useLocale, useT } from './i18n';
 import { ButtonBase } from './ui/button';
 import { CardRoot } from './ui/card';
 import { BadgeBase } from './ui/badge';
@@ -85,7 +86,12 @@ export function Badge({ color = 'stone', children }: { color?: string; children:
   return <BadgeBase variant={BADGE_VARIANT[color] ?? 'neutral'}>{children}</BadgeBase>;
 }
 
-export function statusBadge(status: string): ReactNode {
+/**
+ * Component (not a plain function) so it can read the current locale: the raw
+ * DB status is the lookup key, and an unknown status falls back to itself.
+ */
+export function StatusBadge({ status }: { status: string }) {
+  const { locale } = useLocale();
   const map: Record<string, string> = {
     ready: 'green',
     processing: 'amber',
@@ -102,25 +108,28 @@ export function statusBadge(status: string): ReactNode {
     sent: 'blue',
     answered: 'green',
   };
-  return <Badge color={map[status] ?? 'stone'}>{status}</Badge>;
+  const label = tKey(locale, `status.${status}`);
+  return <Badge color={map[status] ?? 'stone'}>{label === `status.${status}` ? status : label}</Badge>;
 }
 
 /** WhatsApp consent state (Meta opt-in policy). */
-export function consentBadge(status: string | null | undefined): ReactNode {
+export function ConsentBadge({ status }: { status: string | null | undefined }) {
+  const t = useT();
   const map: Record<string, { color: string; label: string }> = {
-    opted_in: { color: 'green', label: 'opted in' },
-    pending: { color: 'amber', label: 'awaiting opt-in' },
-    opted_out: { color: 'red', label: 'opted out' },
+    opted_in: { color: 'green', label: t.consent.optedIn },
+    pending: { color: 'amber', label: t.consent.pending },
+    opted_out: { color: 'red', label: t.consent.optedOut },
   };
   const m = map[status ?? ''] ?? { color: 'stone', label: status ?? '—' };
   return <Badge color={m.color}>{m.label}</Badge>;
 }
 
 export function Spinner({ label }: { label?: string }) {
+  const t = useT();
   return (
     <div className="flex items-center justify-center gap-2 p-8 text-sm text-muted-foreground">
       <Loader2 className="size-5 animate-spin text-primary" aria-hidden="true" />
-      {label ?? 'Loading…'}
+      {label ?? t.common.loading}
     </div>
   );
 }

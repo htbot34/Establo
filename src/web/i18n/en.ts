@@ -1,0 +1,491 @@
+/**
+ * English dictionary for the manager dashboard — the SOURCE OF TRUTH for the
+ * i18n key set. `Dictionary` is derived from this object (leaf strings widen
+ * to `string`, functions keep their signatures), and `es.ts` is typed against
+ * it, so a missing or extra Spanish key is a compile error.
+ *
+ * Scope: dashboard UI chrome only. Worker-facing WhatsApp copy lives in
+ * services/messages.es.ts (always Spanish), and the audit pack / transcript /
+ * certificate PDFs stay English for FARM evaluators — none of that goes
+ * through this dictionary.
+ */
+export const en = {
+  common: {
+    loading: 'Loading…',
+    working: 'Working…',
+    cancel: 'Cancel',
+    save: 'Save',
+    saved: 'Saved',
+    delete: 'Delete',
+    edit: 'Edit',
+    retry: 'Retry',
+    close: 'Close',
+    on: 'On',
+    off: 'Off',
+  },
+
+  dates: {
+    never: 'never',
+    justNow: 'just now',
+    minutesAgo: (n: number) => `${n}m ago`,
+    hoursAgo: (n: number) => `${n}h ago`,
+    daysAgo: (n: number) => `${n}d ago`,
+  },
+
+  themeToggle: {
+    switchToLight: 'Switch to light mode',
+    switchToDark: 'Switch to dark mode',
+  },
+
+  localeToggle: {
+    // aria-label on the EN/ES switch; the visible text is always "EN"/"ES".
+    switchTo: (language: string) => `Switch dashboard language to ${language}`,
+    english: 'English',
+    spanish: 'Spanish',
+    saveFailed: 'Could not save your language preference',
+  },
+
+  nav: {
+    overview: 'Overview',
+    sops: 'SOPs',
+    workers: 'Workers',
+    onboarding: 'Onboarding',
+    conversations: 'Conversations',
+    audit: 'Audit & Exports',
+    settings: 'Settings',
+    simulator: 'Simulator',
+    mockTag: 'mock',
+  },
+
+  layout: {
+    loadingApp: 'Loading Establo…',
+    signOut: 'Sign out',
+    templateAlert: {
+      body: 'WhatsApp template delivery is failing — possible category change; drip lessons are paused for affected workers.',
+      since: 'since',
+      seeRunbook: 'See the RUNBOOK section "Template failure banner".',
+      resuming: 'Resuming…',
+      acknowledge: 'Acknowledge & resume',
+    },
+    demoBanner: {
+      title: 'Hosted demo',
+      body: '— sample dairy, data resets on reload. Answers here are verbatim SOP extracts; the full system answers with Claude, voice notes, and real WhatsApp.',
+      cta: 'Run the real thing',
+    },
+  },
+
+  // statusBadge(): raw DB statuses shown as badges all over the dashboard.
+  status: {
+    ready: 'ready',
+    processing: 'processing',
+    uploaded: 'uploaded',
+    failed: 'failed',
+    active: 'active',
+    inactive: 'inactive',
+    completed: 'completed',
+    paused: 'paused',
+    open: 'open',
+    resolved: 'resolved',
+    pending: 'pending',
+    notified: 'notified',
+    sent: 'sent',
+    answered: 'answered',
+  },
+
+  consent: {
+    optedIn: 'opted in',
+    pending: 'awaiting opt-in',
+    optedOut: 'opted out',
+    methods: {
+      whatsapp_keyword: 'whatsapp keyword',
+      paper_form: 'paper form',
+      imported: 'imported',
+    },
+  },
+
+  roles: {
+    ordeno: 'Milking (Ordeño)',
+    becerras: 'Calf care (Becerras)',
+    alimentacion: 'Feeding (Alimentación)',
+    salud_hato: 'Herd health (Salud del hato)',
+    general: 'General / all roles',
+  },
+
+  // Short role chips on module cards (proper names of the crews; the Spanish
+  // names are used in both languages, matching how US dairies talk).
+  rolesShort: {
+    ordeno: 'Ordeño',
+    becerras: 'Becerras',
+    alimentacion: 'Alimentación',
+    salud_hato: 'Salud del hato',
+    general: 'General',
+  },
+
+  farm: {
+    options: {
+      none: 'Not FARM-specific',
+      stockmanship_general: 'General animal care & handling (stockmanship)',
+      preweaned_calf: 'Pre-weaned calf care',
+      non_ambulatory: 'Non-ambulatory animal management',
+      euthanasia: 'Euthanasia',
+      fitness_to_transport: 'Fitness to transport',
+      safety_other: 'Worker safety / other',
+    },
+    short: {
+      stockmanship_general: 'FARM: stockmanship',
+      preweaned_calf: 'FARM: calf care',
+      non_ambulatory: 'FARM: non-ambulatory',
+      euthanasia: 'FARM: euthanasia',
+      fitness_to_transport: 'FARM: transport',
+      safety_other: 'safety',
+    },
+  },
+
+  events: {
+    qa_interaction: 'Q&A',
+    module_delivered: 'Module delivered',
+    check_passed: 'Check passed',
+    check_failed: 'Check missed',
+    escalation: 'Escalated',
+  },
+
+  login: {
+    tagline: 'WhatsApp training & SOP assistance for your dairy',
+    signIn: 'Sign in',
+    setUpDairy: 'Set up a dairy',
+    orgName: 'Dairy / organization name',
+    timezone: 'Timezone',
+    yourName: 'Your name',
+    setupToken: 'Setup token',
+    setupTokenPlaceholder: 'Provided by your Establo contact',
+    email: 'Email',
+    password: 'Password',
+    createDairy: 'Create dairy + owner account',
+    demoPrefix: 'Demo:',
+  },
+
+  overview: {
+    title: 'Overview',
+    subtitle: 'Training and compliance activity across your dairy.',
+    activeWorkers: 'Active workers',
+    questionsThisWeek: 'Questions this week',
+    modulesDelivered7d: 'Modules delivered (7d)',
+    openKnowledgeGaps: 'Open knowledge gaps',
+    deletionNoticesTitle: 'Data deletion notices',
+    deletionBeforeDate: "1 worker record was permanently redacted at the worker's request on",
+    deletionAfterDate:
+      '. Their training counts left the records; who asked is deliberately not recorded.',
+    activityTitle: 'Training activity — last 14 days',
+    eventsCount: (n: number) => `${n} events`,
+    recentEscalations: 'Recent escalations',
+    viewAll: 'View all',
+    noOpenEscalations: 'No open escalations.',
+  },
+
+  sops: {
+    title: 'SOPs',
+    subtitle:
+      'Upload your procedures (PDF, Word, or photos of paper SOPs). Establo answers workers only from these.',
+    demoNote: (count: string) =>
+      `Document upload and OCR run on the real backend — this hosted demo ships with the ${count}sample SOPs below (browse their extracted chunks with "View text"). Clone the repo and run`,
+    demoNoteAfterCode: 'to ingest your own.',
+    dropHere: 'Drag & drop files here, or',
+    browse: 'browse',
+    fileTypes: 'PDF · DOCX · Markdown · JPG/PNG photos',
+    asPages: 'Selected images are pages of ONE document (photographed paper SOP)',
+    uploading: 'Uploading…',
+    confirmDelete: (title: string) =>
+      `Delete "${title}" and all its chunks? Workers will no longer get answers from it.`,
+    emptyTitle: 'No SOPs yet',
+    emptyHint: 'Upload your first procedure above — or run pnpm seed for demo data.',
+    colDocument: 'Document',
+    colStatus: 'Status',
+    colChunks: 'Chunks',
+    colUploaded: 'Uploaded',
+    viewText: 'View text',
+    chunksExtracted: 'chunks — extracted text as Establo retrieves it',
+    tokensApprox: (n: number) => `· ~${n} tokens`,
+  },
+
+  workers: {
+    title: 'Workers',
+    subtitle: 'Everyone who can text or send voice notes to Establo',
+    printConsentForm: 'Print consent form',
+    addWorker: '+ Add worker',
+    filterAll: 'All consent states',
+    filterOptedIn: 'Opted in',
+    filterPending: 'Awaiting opt-in',
+    filterOptedOut: 'Opted out',
+    countOf: (visible: number, total: number) => `${visible} of ${total} workers`,
+    colName: 'Name',
+    colPhone: 'Phone',
+    colRole: 'Role',
+    colConsent: 'Consent',
+    colAgreement: 'Agreement',
+    colOnboarding: 'Onboarding',
+    colLastActive: 'Last active',
+    unsigned: 'unsigned',
+    renewalDue: 'renewal due',
+    unassigned: 'unassigned',
+    modulesCount: 'modules',
+    lessonsWaitOptIn: '— lessons wait for opt-in',
+    emptyTitle: 'No workers yet',
+    emptyHint: 'Add a worker with their WhatsApp number to get started.',
+    noFilterMatch: 'No workers match this filter.',
+    addTitle: 'Add worker',
+    fullName: 'Full name',
+    phoneLabel: 'WhatsApp phone (E.164)',
+    jobRoleLabel: 'Job role (decides which role-specific lessons they receive)',
+    unassignedOption: 'Unassigned (universal lessons only)',
+    notesLabel: 'Notes (optional)',
+    optInNote1: 'Adding a worker does',
+    optInNoteNot: 'not',
+    optInNote2:
+      'opt them in. They opt in themselves by texting the number (ALTA or any first message), or sign the printable consent form and you attest it on their record. Until then Establo sends them nothing.',
+    adding: 'Adding…',
+  },
+
+  workerDetail: {
+    hired: 'hired',
+    lastActive: 'last active',
+    downloadTranscript: 'Download transcript PDF',
+    deleteData: 'Delete worker data',
+    enrollInTrack: 'Enroll in track',
+    deletedBefore: "This worker's data was permanently deleted on",
+    deletedAfter:
+      '. Name, phone and message content are gone; the remaining entries below are non-identifying training records (topic, check results, timestamps).',
+    agreementSentNote: 'Agreement sent — the worker signs by replying ACEPTO.',
+    agreementQueuedNote:
+      'Agreement queued — it goes out the next time the worker writes (24h window is closed).',
+    jobRoleTitle: 'Job role',
+    jobRoleHint: 'Decides which role-specific lessons this worker receives when enrolled.',
+    voiceTitle: 'Always send voice notes',
+    voiceHint:
+      'Attach a spoken voice note to every answer and check reply — not only when this worker sends audio. Lessons always include audio.',
+    consentTitle: 'WhatsApp consent',
+    attestedBy: (name: string) => `attested by ${name}`,
+    consentPendingHint:
+      'Establo sends nothing until this worker opts in: they text the number (ALTA or any first message), or you collect the printed consent form and attest it here.',
+    consentPaperButton: 'Consent collected on paper',
+    optedOutNote:
+      'This worker texted BAJA. All sends are blocked until they text ALTA themselves — this cannot be overridden from the dashboard.',
+    agreementTitle: 'Cow care agreement',
+    signed: 'Signed',
+    on: 'on',
+    via: 'via',
+    annualRenewalDue: 'annual renewal due',
+    sentPending: 'Sent',
+    awaitingAcepto: '— waiting for the worker to reply',
+    notSigned: 'Not signed',
+    sendForResignature: 'Send for re-signature',
+    sendViaWhatsapp: 'Send via WhatsApp',
+    mustOptInFirst: 'Worker must opt in first',
+    markSignedPaper: 'Mark signed on paper',
+    farmAgreementNote:
+      'FARM Animal Care v5 expects a signed cow care agreement for every employee with animal care responsibilities, renewed annually.',
+    confirmedBy: (name: string, role: string) => `Confirmed by ${name} (${role}) on`,
+    completionNotConfirmed: 'completion not confirmed',
+    started: 'started',
+    confirmCompletion: 'Confirm completion',
+    certificatePdf: 'Certificate PDF',
+    checkPassed: 'passed',
+    checkMissed: 'missed',
+    due: (when: string) => `due ${when}`,
+    awaitingOptInNote:
+      'Awaiting opt-in — lessons are scheduled but nothing is sent until this worker opts in on WhatsApp.',
+    transcriptTitle: 'Training transcript',
+    transcriptSubtitle: '— every logged event, newest first',
+    noEvents: 'No training events yet.',
+    deleteTitle: 'Delete worker data',
+    deleteBody1: 'This permanently deletes',
+    deleteBody2:
+      "'s name, phone number and all message content, exactly as if they had texted BORRAR MIS DATOS. Training events keep only their non-identifying documentation fields (topic, check results, timestamps), and the worker is excluded from all future audit exports. This cannot be undone.",
+    permanentlyDelete: 'Permanently delete',
+    enrollTitle: (name: string) => `Enroll ${name}`,
+    trackLabel: 'Onboarding track',
+    chooseTrack: 'Choose a track…',
+    trackOption: (name: string, count: number) => `${name} (${count} modules)`,
+    previewWorker: 'This worker',
+    previewRole: 'role:',
+    previewUnassigned: '(unassigned)',
+    previewReceive: 'will receive',
+    previewOf: (applicable: number, total: number) => `${applicable} of ${total}`,
+    previewLessons: 'lessons based on their role.',
+    previewNoneApply:
+      'No lessons in this track apply to this role — assign a different role or pick another track.',
+    scheduleNote:
+      "Modules are scheduled from today using each module's day offset, and sent by the scheduler at the configured local hour.",
+    notOptedInNote: 'This worker has not opted in yet — nothing is sent until they do.',
+    enroll: 'Enroll',
+    attestConsentTitle: 'Consent collected on paper',
+    attestAgreementTitle: 'Agreement signed on paper',
+    attestConsentBody: (name: string) =>
+      `Confirm that ${name} signed the printed WhatsApp-consent form. Keep the paper form in their file.`,
+    attestAgreementBody: (name: string) =>
+      `Confirm that ${name} signed the cow care agreement on paper. Keep the signed copy in their file.`,
+    attestNameLabel: 'Your full name (attestation)',
+    attest: 'Attest',
+  },
+
+  onboarding: {
+    title: 'Onboarding',
+    subtitle: 'Scheduled training tracks delivered over WhatsApp, with one-question checks',
+    newTrack: '+ New track',
+    emptyTitle: 'No tracks yet',
+    emptyHint: 'Create a track, then add or generate modules from an SOP.',
+    modules: 'modules',
+    inProgress: 'in progress',
+    completed: 'completed',
+    modalTitle: 'New onboarding track',
+    nameLabel: 'Name',
+    descriptionLabel: 'Description (optional)',
+    createTrack: 'Create track',
+  },
+
+  trackEditor: {
+    generateFromSop: 'Generate from SOP',
+    addModule: '+ Add module',
+    dayAt: (day: number, hour: number) => `day ${day} · ${hour}:00 local`,
+    allRoles: 'All roles',
+    videoTag: 'video',
+    checkLabel: 'Check:',
+    moveUp: 'Move up',
+    moveDown: 'Move down',
+    emptyNote: 'No modules yet — add one by hand or generate drafts from an SOP.',
+    confirmDeleteModule: (title: string) => `Delete module "${title}"?`,
+    editTitle: 'Edit module',
+    addTitle: 'Add module',
+    titleLabel: 'Title',
+    dayOffsetLabel: 'Day offset (days after enrollment)',
+    sendHourLabel: 'Send hour (org local time)',
+    farmAreaLabel: 'FARM Animal Care v5 area (groups this lesson in the audit pack)',
+    rolesLabel: 'Delivered to roles — leave all unchecked for "All roles (universal)"',
+    universalNote: 'Universal — every enrolled worker receives this lesson.',
+    onlyRolesNote: (list: string) => `Only workers with these roles receive it: ${list}.`,
+    videoSectionLabel: 'Optional video — a link we send & embed (never uploaded, hosted, or clipped)',
+    chooseFromLibrary: 'Choose from training library… (or paste a link below)',
+    videoUrlPlaceholder: 'https://www.youtube.com/watch?v=…  (YouTube, Vimeo, or any https link)',
+    invalidVideoLink: 'Not a valid https video link.',
+    videoTitleLabel: 'Video title (Spanish, shown to the worker)',
+    videoTitleFallback: 'Título del video',
+    availableLanguages: 'Available languages',
+    attributionLabel: 'Video attribution',
+    attributionHint: 'Required credit — shown to the worker and kept on the training record.',
+    videoPreview: 'Video preview',
+    linkNoPreview: 'Link will be sent to the worker (no inline preview for this provider).',
+    bodyLabel: 'Lesson body (Spanish, ≤900 chars, written for low literacy) —',
+    checkQuestionLabel: 'Check question (Spanish)',
+    optionLabel: (n: number) => `Option ${n}`,
+    correct: 'correct',
+    saveModule: 'Save module',
+    generateTitle: 'Generate modules from an SOP',
+    generateBody:
+      'Claude drafts 3 modules (lesson + comprehension check) from the selected document. Review and edit them before enrolling anyone — you stay in control.',
+    sourceSop: 'Source SOP',
+    chooseDocument: 'Choose a document…',
+    drafting: 'Drafting… (takes ~20s)',
+    generateDrafts: 'Generate drafts',
+  },
+
+  conversations: {
+    title: 'Conversations',
+    subtitle: 'Read-only view of worker chats, plus the escalations inbox',
+    tabConversations: 'Conversations',
+    tabEscalations: 'Escalations',
+    noConversations: 'No conversations yet',
+    pickConversation: 'Pick a conversation',
+    messagesCount: (n: number) => `${n} messages`,
+    voiceNote: 'voice note (transcript)',
+    template: 'template',
+    demoVoicePill: 'voice reply — muted in this demo (the real system sends TTS audio)',
+    colWorker: 'Worker',
+    colQuestion: 'Question',
+    colReason: 'Reason',
+    colRaised: 'Raised',
+    colStatus: 'Status',
+    markResolved: 'Mark resolved',
+    noEscalationsTitle: 'No escalations',
+    noEscalationsHint: "When Establo can't answer from your SOPs, the gap shows up here.",
+  },
+
+  audit: {
+    title: 'Audit & Exports',
+    subtitle: 'One click produces the documentation pack for a FARM evaluation or investigation',
+    generateTitle: 'Generate an audit pack',
+    from: 'From',
+    to: 'To',
+    starting: 'Starting…',
+    generate: 'Generate audit pack',
+    packContains:
+      'The pack contains: a formal training-documentation letter (PDF) listing each employee, their training dates, topics and check results · the full training-events CSV · per-worker transcript PDFs — all zipped together.',
+    demoNote:
+      'Hosted demo: the CSV is generated right here in your browser; the letter PDF and transcripts zip are produced by the real backend (run locally to see them).',
+    colPeriod: 'Period',
+    colRequested: 'Requested',
+    colStatus: 'Status',
+    colDownloads: 'Downloads',
+    letterPdf: 'Letter PDF',
+    csv: 'CSV',
+    fullPack: 'Full pack (zip)',
+    pdfBackendOnly: 'PDF/zip: backend only',
+    emptyTitle: 'No audit packs yet',
+    emptyHint: 'Generate your first one above.',
+  },
+
+  settings: {
+    title: 'Settings',
+    subtitle: 'Organization details and billing',
+    orgTitle: 'Organization',
+    dairyName: 'Dairy name',
+    timezoneLabel: 'Timezone (drip schedule uses this)',
+    herdSizeLabel: 'Herd size (cows)',
+    runModeTitle: 'Run mode',
+    runModeBefore: 'This server is running in',
+    runModeAfter: 'mode. See the README for the path from mock to sandbox to production.',
+    keywordsTitle: 'Forced-escalation keywords',
+    keywordsHint:
+      "One keyword per line. Any worker question containing one of these words (accents and capitalization don't matter) is answered normally but always flagged for you as an escalation — useful for chemicals, equipment, or topics you want to hear about personally.",
+    saveKeywords: 'Save keywords',
+    agreementTitle: 'Cow care agreement',
+    agreementHint:
+      'FARM Animal Care v5 expects every employee with animal care responsibilities to sign this, renewed annually. Workers sign by replying ACEPTO on WhatsApp. Editing the text creates a new version; existing signatures keep their version. Current version since',
+    saveNewVersion: 'Save as new version',
+    billingTitle: 'Billing',
+    subscription: 'Subscription',
+    subscriptionActiveTail: '— base fee + per-cow pricing.',
+    activeBadge: 'active',
+    noSubscription1:
+      'No active subscription. Establo bills a flat base fee plus a per-cow amount (your herd size:',
+    noSubscription2: 'cows).',
+    setupStripe: 'Set up billing with Stripe',
+  },
+
+  simulator: {
+    title: 'WhatsApp Simulator',
+    subtitle: 'Play the role of a worker. Messages run through the real webhook pipeline.',
+    mockBadge: 'mock mode',
+    actingAs: 'Acting as worker',
+    windowLabel: '24h window:',
+    windowOpen: 'OPEN',
+    windowClosed: 'CLOSED',
+    lastInbound: '— last inbound',
+    consentLabel: 'Consent:',
+    agreementAwaiting: 'agreement awaiting ACEPTO',
+    schedulerControls: 'Scheduler controls',
+    runDrip: 'Run drip scheduler now',
+    closeWindow: 'Simulate >24h since last message',
+    dripRan: (delivered: number, notified: number, reminded: number) =>
+      `Scheduler ran: ${delivered} delivered, ${notified} notified, ${reminded} reminded`,
+    windowClosedNote:
+      'Pretending the worker last wrote >24h ago — next drip uses the template handshake',
+    handshakeHint:
+      'Enroll this worker in a track (Workers page), close the window, then run the scheduler to watch the template handshake: notify template, worker replies OK, then the full lesson arrives.',
+    nonSpanishHint:
+      'The worker assistant operates in Spanish — it just replied with a short Spanish-only nudge. Try a suggested question below the chat (or type in Spanish).',
+    sendMessage: 'Send message',
+    tryHint:
+      'Tap a question above, or try: "¿me puedes subir el sueldo?" (refusal) · "hola" · with a pending lesson reply "2" · consent "ALTA" / "BAJA" · with a pending agreement reply "ACEPTO".',
+  },
+};
+
+export type Dictionary = typeof en;

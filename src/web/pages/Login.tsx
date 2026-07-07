@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, IS_DEMO } from '../api';
 import { useAuth } from '../auth';
 import { Button, ErrorNote, Input, Label } from '../components';
+import { useT } from '../i18n';
 import { Logomark } from '../brand/Logomark';
 
 export default function Login() {
@@ -16,6 +17,7 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const { refresh } = useAuth();
+  const t = useT();
   const navigate = useNavigate();
 
   async function submit(e: FormEvent) {
@@ -46,24 +48,22 @@ export default function Login() {
         <div className="mb-6 flex flex-col items-center text-center">
           <Logomark className="size-11 text-foreground" title="Establo" />
           <h1 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">Establo</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            WhatsApp training & SOP assistance for your dairy
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">{t.login.tagline}</p>
         </div>
         <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
           <div className="mb-5 grid grid-cols-2 gap-1 rounded-md bg-muted p-1 text-sm font-medium">
-            {(['login', 'setup'] as const).map((t) => (
+            {(['login', 'setup'] as const).map((tabKey) => (
               <button
-                key={t}
+                key={tabKey}
                 onClick={() => {
-                  setTab(t);
+                  setTab(tabKey);
                   setError(null);
                 }}
                 className={`rounded-sm py-1.5 transition-colors ${
-                  tab === t ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground'
+                  tab === tabKey ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground'
                 }`}
               >
-                {t === 'login' ? 'Sign in' : 'Set up a dairy'}
+                {tabKey === 'login' ? t.login.signIn : t.login.setUpDairy}
               </button>
             ))}
           </div>
@@ -72,34 +72,34 @@ export default function Login() {
             {tab === 'setup' && (
               <>
                 <div>
-                  <Label>Dairy / organization name</Label>
+                  <Label>{t.login.orgName}</Label>
                   <Input value={orgName} onChange={(e) => setOrgName(e.target.value)} required placeholder="Rancho Vista Lechería" />
                 </div>
                 <div>
-                  <Label>Timezone</Label>
+                  <Label>{t.login.timezone}</Label>
                   <Input value={timezone} onChange={(e) => setTimezone(e.target.value)} required placeholder="America/Boise" />
                 </div>
                 <div>
-                  <Label>Your name</Label>
+                  <Label>{t.login.yourName}</Label>
                   <Input value={name} onChange={(e) => setName(e.target.value)} required />
                 </div>
                 <div>
-                  <Label>Setup token</Label>
+                  <Label>{t.login.setupToken}</Label>
                   <Input
                     value={setupToken}
                     onChange={(e) => setSetupToken(e.target.value)}
                     required
-                    placeholder="Provided by your Establo contact"
+                    placeholder={t.login.setupTokenPlaceholder}
                   />
                 </div>
               </>
             )}
             <div>
-              <Label>Email</Label>
+              <Label>{t.login.email}</Label>
               <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="username" />
             </div>
             <div>
-              <Label>Password</Label>
+              <Label>{t.login.password}</Label>
               <Input
                 type="password"
                 value={password}
@@ -110,12 +110,12 @@ export default function Login() {
               />
             </div>
             <Button type="submit" disabled={busy} className="w-full">
-              {busy ? 'Working…' : tab === 'login' ? 'Sign in' : 'Create dairy + owner account'}
+              {busy ? t.common.working : tab === 'login' ? t.login.signIn : t.login.createDairy}
             </Button>
           </form>
           {tab === 'login' && (
             <p className="mt-4 text-center text-xs text-muted-foreground">
-              Demo: <span className="font-mono">demo@establo.app / establo-demo-2026</span>
+              {t.login.demoPrefix} <span className="font-mono">demo@establo.app / establo-demo-2026</span>
             </p>
           )}
         </div>

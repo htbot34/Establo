@@ -1,13 +1,15 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Check } from 'lucide-react';
-import { api, fmtDate } from '../api';
+import { api } from '../api';
 import { useAuth } from '../auth';
 import { Badge, Button, Card, ErrorNote, Input, Label, PageHeader, Textarea } from '../components';
+import { useFmt, useT } from '../i18n';
 
 function SavedNote() {
+  const t = useT();
   return (
     <span className="inline-flex items-center gap-1 text-sm text-success">
-      <Check className="size-4" aria-hidden="true" /> Saved
+      <Check className="size-4" aria-hidden="true" /> {t.common.saved}
     </span>
   );
 }
@@ -39,6 +41,8 @@ export default function Settings() {
   // (e.g. the static demo has no GET /api/org) → the section stays hidden.
   const [keywordsText, setKeywordsText] = useState<string | null>(null);
   const [keywordsSaved, setKeywordsSaved] = useState(false);
+  const t = useT();
+  const { fmtDate } = useFmt();
 
   useEffect(() => {
     if (me) {
@@ -126,53 +130,46 @@ export default function Settings() {
 
   return (
     <div>
-      <PageHeader title="Settings" subtitle="Organization details and billing" />
+      <PageHeader title={t.settings.title} subtitle={t.settings.subtitle} />
       <ErrorNote error={error} />
 
       <Card className="mb-4 max-w-xl p-5">
-        <h2 className="mb-4 text-sm font-medium text-foreground">Organization</h2>
+        <h2 className="mb-4 text-sm font-medium text-foreground">{t.settings.orgTitle}</h2>
         <form onSubmit={(e) => void save(e)} className="space-y-3">
           <div>
-            <Label>Dairy name</Label>
+            <Label>{t.settings.dairyName}</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} required />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>Timezone (drip schedule uses this)</Label>
+              <Label>{t.settings.timezoneLabel}</Label>
               <Input value={timezone} onChange={(e) => setTimezone(e.target.value)} required />
             </div>
             <div>
-              <Label>Herd size (cows)</Label>
+              <Label>{t.settings.herdSizeLabel}</Label>
               <Input type="number" min={1} value={herdSize} onChange={(e) => setHerdSize(e.target.value)} />
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <Button type="submit">Save</Button>
+            <Button type="submit">{t.common.save}</Button>
             {saved && <SavedNote />}
           </div>
         </form>
       </Card>
 
       <Card className="mb-4 max-w-xl p-5">
-        <h2 className="mb-2 text-sm font-medium text-foreground">Run mode</h2>
+        <h2 className="mb-2 text-sm font-medium text-foreground">{t.settings.runModeTitle}</h2>
         <p className="text-sm text-foreground">
-          This server is running in{' '}
-          <Badge color={runMode === 'production' ? 'green' : 'amber'}>{runMode}</Badge> mode. See the
-          README for the path from mock to sandbox to production.
+          {t.settings.runModeBefore}{' '}
+          <Badge color={runMode === 'production' ? 'green' : 'amber'}>{runMode}</Badge>
+          {t.settings.runModeAfter}
         </p>
       </Card>
 
       {keywordsText !== null && (
         <Card className="mb-4 max-w-xl p-5">
-          <h2 className="mb-1 text-sm font-medium text-foreground">
-            Forced-escalation keywords
-          </h2>
-          <p className="mb-3 text-xs text-muted-foreground">
-            One keyword per line. Any worker question containing one of these words (accents and
-            capitalization don't matter) is answered normally but always flagged for you as an
-            escalation — useful for chemicals, equipment, or topics you want to hear about
-            personally.
-          </p>
+          <h2 className="mb-1 text-sm font-medium text-foreground">{t.settings.keywordsTitle}</h2>
+          <p className="mb-3 text-xs text-muted-foreground">{t.settings.keywordsHint}</p>
           <Textarea
             rows={5}
             value={keywordsText}
@@ -180,7 +177,7 @@ export default function Settings() {
             placeholder={'ácido\nsala de espera\namoniaco'}
           />
           <div className="mt-3 flex items-center gap-3">
-            <Button onClick={() => void saveKeywords()}>Save keywords</Button>
+            <Button onClick={() => void saveKeywords()}>{t.settings.saveKeywords}</Button>
             {keywordsSaved && <SavedNote />}
           </div>
         </Card>
@@ -189,15 +186,13 @@ export default function Settings() {
       {agreement && (
         <Card className="mb-4 max-w-xl p-5">
           <h2 className="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
-            Cow care agreement
+            {t.settings.agreementTitle}
             <Badge color="stone">
               <span className="font-mono">v{agreement.version}</span>
             </Badge>
           </h2>
           <p className="mb-3 text-xs text-muted-foreground">
-            FARM Animal Care v5 expects every employee with animal care responsibilities to sign
-            this, renewed annually. Workers sign by replying ACEPTO on WhatsApp. Editing the text
-            creates a new version; existing signatures keep their version. Current version since{' '}
+            {t.settings.agreementHint}{' '}
             <span className="font-mono tabular-nums">{fmtDate(agreement.createdAt)}</span>.
           </p>
           <Textarea
@@ -210,7 +205,7 @@ export default function Settings() {
               onClick={() => void saveAgreement()}
               disabled={agreementText.trim() === agreement.textEs.trim()}
             >
-              Save as new version
+              {t.settings.saveNewVersion}
             </Button>
             {agreementSaved && <SavedNote />}
           </div>
@@ -219,19 +214,20 @@ export default function Settings() {
 
       {billing?.enabled && (
         <Card className="max-w-xl p-5">
-          <h2 className="mb-2 text-sm font-medium text-foreground">Billing</h2>
+          <h2 className="mb-2 text-sm font-medium text-foreground">{t.settings.billingTitle}</h2>
           {billing.billing.active ? (
             <p className="text-sm text-foreground">
-              Subscription <Badge color="green">active</Badge> — base fee + per-cow pricing.
+              {t.settings.subscription} <Badge color="green">{t.settings.activeBadge}</Badge>{' '}
+              {t.settings.subscriptionActiveTail}
             </p>
           ) : (
             <div>
               <p className="mb-3 text-sm text-foreground">
-                No active subscription. Establo bills a flat base fee plus a per-cow amount (your
-                herd size: <span className="font-mono tabular-nums">{me?.org.herdSize ?? '—'}</span>{' '}
-                cows).
+                {t.settings.noSubscription1}{' '}
+                <span className="font-mono tabular-nums">{me?.org.herdSize ?? '—'}</span>{' '}
+                {t.settings.noSubscription2}
               </p>
-              <Button onClick={() => void checkout()}>Set up billing with Stripe</Button>
+              <Button onClick={() => void checkout()}>{t.settings.setupStripe}</Button>
             </div>
           )}
         </Card>

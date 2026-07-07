@@ -52,34 +52,10 @@ export async function api<T>(
 }
 
 export interface Me {
-  user: { id: string; email: string; name: string; role: string };
+  // uiLocale is optional so the static demo fixture (exported before the
+  // column existed) still typechecks; anything unknown falls back to 'en'.
+  user: { id: string; email: string; name: string; role: string; uiLocale?: string };
   org: { id: string; name: string; timezone: string; herdSize: number | null; locale: string };
 }
 
-export function fmtDateTime(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
-export function fmtDate(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-}
-
-export function timeAgo(iso: string | null | undefined): string {
-  if (!iso) return 'never';
-  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
-}
+// On-screen date formatting moved to i18n/dates.ts (locale-aware).

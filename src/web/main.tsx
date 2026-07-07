@@ -9,6 +9,7 @@ import '@fontsource/ibm-plex-mono/500.css';
 import '@fontsource/ibm-plex-mono/600.css';
 import { IS_DEMO } from './api';
 import { AuthProvider } from './auth';
+import { LocaleProvider } from './i18n';
 import Layout from './Layout';
 import Login from './pages/Login';
 import Overview from './pages/Overview';
@@ -53,8 +54,10 @@ const router = IS_DEMO
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthProvider>
-      <RouterProvider router={router} />
-      <Toaster />
+      <LocaleProvider>
+        <RouterProvider router={router} />
+        <Toaster />
+      </LocaleProvider>
     </AuthProvider>
   </StrictMode>,
 );

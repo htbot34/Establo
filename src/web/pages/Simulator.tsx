@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCheck, ClipboardList, Clock, History, Mic, MessagesSquare, Send, Volume2 } from 'lucide-react';
-import { api, IS_DEMO, timeAgo } from '../api';
-import { Badge, Button, Card, consentBadge, PageHeader, Select, Spinner } from '../components';
+import { api, IS_DEMO } from '../api';
+import { Badge, Button, Card, ConsentBadge, PageHeader, Select, Spinner } from '../components';
+import { useFmt, useT } from '../i18n';
 import { looksSpanish } from '../../server/services/language';
 import { videoFromText } from '../../server/services/video';
 
-/** Spanish starter questions drawn from the seeded SOPs (tap to fill the box). */
+/**
+ * Spanish starter questions drawn from the seeded SOPs (tap to fill the box).
+ * Worker-facing content: everything INSIDE the WhatsApp phone frame stays
+ * Spanish in both dashboard languages — it mirrors what the worker sees.
+ */
 const SUGGESTED_QUESTIONS = [
   '¿qué hago si una vaca tiene mastitis?',
   '¿cuánto tiempo dejo el pre-dip?',
@@ -57,6 +62,8 @@ export default function Simulator() {
   const [nonSpanishHint, setNonSpanishHint] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastCount = useRef(0);
+  const t = useT();
+  const { timeAgo } = useFmt();
 
   useEffect(() => {
     void api<SimWorker[]>('/api/simulator/workers').then((w) => {
@@ -76,8 +83,8 @@ export default function Simulator() {
     setNonSpanishHint(false);
     lastCount.current = 0;
     void poll();
-    const t = setInterval(() => void poll(), 1500);
-    return () => clearInterval(t);
+    const timer = setInterval(() => void poll(), 1500);
+    return () => clearInterval(timer);
   }, [poll]);
 
   useEffect(() => {
@@ -112,14 +119,14 @@ export default function Simulator() {
       '/api/simulator/run-drip',
       { method: 'POST' },
     );
-    setDripNote(`Scheduler ran: ${r.delivered} delivered, ${r.notified} notified, ${r.reminded} reminded`);
+    setDripNote(t.simulator.dripRan(r.delivered, r.notified, r.reminded));
     setTimeout(() => setDripNote(''), 5000);
     void poll();
   }
 
   async function closeWindow() {
     await api('/api/simulator/close-window', { method: 'POST', body: { workerId } });
-    setDripNote('Pretending the worker last wrote >24h ago — next drip uses the template handshake');
+    setDripNote(t.simulator.windowClosedNote);
     setTimeout(() => setDripNote(''), 6000);
     void poll();
   }
@@ -132,15 +139,15 @@ export default function Simulator() {
   return (
     <div>
       <PageHeader
-        title="WhatsApp Simulator"
-        subtitle="Play the role of a worker. Messages run through the real webhook pipeline."
-        actions={<Badge color="amber">mock mode</Badge>}
+        title={t.simulator.title}
+        subtitle={t.simulator.subtitle}
+        actions={<Badge color="amber">{t.simulator.mockBadge}</Badge>}
       />
       <div className="grid grid-cols-5 gap-4">
         <div className="col-span-2 space-y-3">
           <Card className="p-4">
             <label className="mb-1 block text-xs font-medium text-secondary-foreground">
-              Acting as worker
+              {t.simulator.actingAs}
             </label>
             <Select value={workerId} onChange={(e) => setWorkerId(e.target.value)}>
               {workers.map((w) => (
@@ -150,44 +157,42 @@ export default function Simulator() {
               ))}
             </Select>
             <div className="mt-3 text-xs text-muted-foreground">
-              24h window:{' '}
+              {t.simulator.windowLabel}{' '}
               {open ? (
-                <span className="font-semibold text-success">OPEN</span>
+                <span className="font-semibold text-success">{t.simulator.windowOpen}</span>
               ) : (
-                <span className="font-semibold text-destructive">CLOSED</span>
+                <span className="font-semibold text-destructive">{t.simulator.windowClosed}</span>
               )}{' '}
-              — last inbound {timeAgo(conv?.lastInboundAt ?? worker?.lastInboundAt)}
+              {t.simulator.lastInbound} {timeAgo(conv?.lastInboundAt ?? worker?.lastInboundAt)}
             </div>
             <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
-              Consent: {consentBadge(worker?.consentStatus)}
+              {t.simulator.consentLabel} <ConsentBadge status={worker?.consentStatus} />
               {worker?.pendingAgreement && (
                 <span className="inline-flex items-center gap-1 text-warning">
-                  <ClipboardList className="size-3.5" aria-hidden="true" /> agreement awaiting ACEPTO
+                  <ClipboardList className="size-3.5" aria-hidden="true" />{' '}
+                  {t.simulator.agreementAwaiting}
                 </span>
               )}
             </div>
           </Card>
           <Card className="space-y-2 p-4">
             <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Scheduler controls
+              {t.simulator.schedulerControls}
             </h3>
             <Button variant="secondary" className="w-full justify-start" onClick={() => void runDrip()}>
-              <Clock aria-hidden="true" /> Run drip scheduler now
+              <Clock aria-hidden="true" /> {t.simulator.runDrip}
             </Button>
             <Button variant="secondary" className="w-full justify-start" onClick={() => void closeWindow()}>
-              <History aria-hidden="true" /> Simulate &gt;24h since last message
+              <History aria-hidden="true" /> {t.simulator.closeWindow}
             </Button>
             {dripNote && <p className="text-xs font-medium text-success">{dripNote}</p>}
-            <p className="text-xs text-muted-foreground">
-              Enroll this worker in a track (Workers page), close the window, then run the
-              scheduler to watch the template handshake: notify template, worker replies OK, then
-              the full lesson arrives.
-            </p>
+            <p className="text-xs text-muted-foreground">{t.simulator.handshakeHint}</p>
           </Card>
         </div>
 
         <div className="col-span-3">
-          {/* Authentic WhatsApp chrome: fixed device + WhatsApp colors, theme-independent. */}
+          {/* Authentic WhatsApp chrome: fixed device + WhatsApp colors, theme-independent.
+              The content inside the frame is what the WORKER sees — always Spanish. */}
           <div className="overflow-hidden rounded-[2rem] border-8 border-[#11161b] bg-[#11161b] shadow-xl">
             <div className="flex items-center gap-2 bg-emerald-800 px-4 py-3 text-white">
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-sm font-bold">
@@ -319,23 +324,18 @@ export default function Simulator() {
                 <button
                   onClick={() => void send()}
                   disabled={sending || !text.trim()}
-                  aria-label="Send message"
+                  aria-label={t.simulator.sendMessage}
                   className="flex h-10 w-10 shrink-0 items-center justify-center self-end rounded-full bg-emerald-700 text-white disabled:opacity-50"
                 >
                   <Send className="size-4" aria-hidden="true" />
                 </button>
               </div>
-              <p className="text-[10px] text-[#667781]">
-                Tap a question above, or try: "¿me puedes subir el sueldo?" (refusal) · "hola" · with
-                a pending lesson reply "2" · consent "ALTA" / "BAJA" · with a pending agreement reply
-                "ACEPTO".
-              </p>
+              <p className="text-[10px] text-[#667781]">{t.simulator.tryHint}</p>
             </div>
           </div>
           {nonSpanishHint && (
             <p className="badge-warning mt-2 rounded-md px-3 py-2 text-xs">
-              The worker assistant operates in Spanish — it just replied with a short Spanish-only
-              nudge. Try a suggested question below the chat (or type in Spanish).
+              {t.simulator.nonSpanishHint}
             </p>
           )}
         </div>

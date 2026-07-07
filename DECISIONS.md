@@ -523,3 +523,70 @@ sentences.
   real inbound pipeline: accented keyword vs accentless question, escalation
   row + event created next to a grounded answer, guard precedence, and the
   always-audio voice-note attachment for text questions.
+
+## Dashboard EN/ES language toggle (July 2026)
+
+Scope discipline first: this translates the MANAGER dashboard chrome only.
+Three surfaces are deliberately untouched: worker-facing WhatsApp copy
+(`services/messages.es.ts` — always Spanish, governed by `orgs.locale`), SOP
+content (the dairy's own documents), and the audit pack / transcript /
+certificate PDFs (`services/auditPack.ts`, `transcripts.ts`,
+`certificates.ts`), which are consumed by English-speaking FARM evaluators
+and MUST stay English. The Spanish Audit page copy says so explicitly
+("PDF, en inglés — la usan los evaluadores FARM") rather than hiding it.
+
+- **No i18n library.** `src/web/i18n/` is a typed dictionary pair: `en.ts` is
+  the source of truth and `Dictionary = typeof en` (leaf strings widen to
+  `string`, functions keep signatures); `es.ts` is declared `const es:
+  Dictionary`, so a missing OR extra Spanish key is a compile error — the
+  completeness check runs in `pnpm typecheck`, not at runtime. A unit test
+  re-asserts the same key/leaf-kind parity at runtime so the invariant
+  survives even if someone drops the annotation. Pages read the dictionary
+  through `useT()` (typed object access, e.g. `t.workers.title`); the only
+  string-keyed lookup is `t(locale, 'status.ready')` for badges keyed by
+  server enums, with fallback locale → English → the path itself.
+- **Persistence is per-user, not per-org.** `users.ui_locale`
+  (`'en' | 'es'`, default `'en'`, additive migration `0009`) — an Anglo
+  owner and a Spanish-speaking herd manager share one org. `orgs.locale`
+  (worker language) is a different concept and untouched. Exposed on
+  `GET /api/auth/me`; changed via `PATCH /api/auth/me`, which reuses the
+  same `requireAuth` preHandler as the `/api` routes so the CSRF
+  double-submit applies. Existing users keep today's English dashboard.
+- **The toggle is optimistic with revert.** `LocaleProvider` derives locale
+  from `me.user.uiLocale` unless the user flipped the switch this session
+  (the override wins immediately); the PATCH runs in the background and a
+  failure reverts + toasts. In the static demo (`IS_DEMO`) and on the login
+  page there is nothing to persist to, so the override IS the mechanism —
+  session-local, resets on reload, exactly the spec's fallback. No
+  localStorage: the preference is server-side truth, and pre-auth pages are
+  English by design.
+- **On-screen dates go through `i18n/dates.ts`** (`en-US` / `es-MX` Intl
+  locales + translated `timeAgo`); the old formatters were removed from
+  `api.ts` so there is one source. PDF date formatting is server-side and
+  unchanged.
+- **statusBadge/consentBadge became components** (`StatusBadge`,
+  `ConsentBadge`) so they can read the locale context; plain-function
+  helpers can't call hooks, and the badge call sites inside module-scope
+  tanstack column defs work fine as elements. Workers/Audit column arrays
+  moved inside their components (`useMemo` on `[t, fmt]`), the pattern
+  Conversations already used.
+- **What counts as chrome vs content in the Simulator:** the page header and
+  scheduler controls translate; everything inside the WhatsApp phone frame
+  (nota de voz, plantilla, suggested questions, placeholders) stays Spanish
+  in both languages because it mirrors what the worker sees. The reviewer
+  hint line below the suggested questions translates — it addresses the
+  manager, not the worker.
+- **Spanish register:** professional Latin American Spanish, tú-form like
+  `messages.es.ts`. Consent states phrase as alta/baja to match the
+  ALTA/BAJA keywords workers actually text. Industry/product terms
+  (escalamiento, comprobación, fragmentos, paquete de auditoría, Inducción,
+  stockmanship, constancia) carry `REVIEW (native speaker)` comments in
+  `es.ts` for a native-speaker pass before this ships wide. Server error
+  messages (`{ error: ... }` responses) remain English — they're also log/
+  support artifacts; translating them is future work, noted here on purpose.
+- **Tests:** type-level parity (typecheck) + runtime shape parity, `t()`
+  fallback chain, locale-aware date/timeAgo strings, a `react-dom/server`
+  render test that Login shows Spanish at `locale='es'` (no jsdom — SSR
+  markup is enough to prove wiring), and an integration test that PATCH
+  persists `ui_locale` with 400/401/403 guards. vitest's include gained
+  `.test.tsx` for the render test.

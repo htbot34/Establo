@@ -53,6 +53,9 @@ export const users = pgTable(
     passwordHash: text('password_hash').notNull(),
     role: text('role', { enum: ['owner', 'manager'] }).notNull().default('manager'),
     name: text('name').notNull(),
+    // Dashboard display language for this manager (worker-facing WhatsApp
+    // content is governed by orgs.locale and stays Spanish regardless).
+    uiLocale: text('ui_locale', { enum: ['en', 'es'] }).notNull().default('en'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

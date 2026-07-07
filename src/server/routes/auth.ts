@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { config } from '../config.js';
 import { getDb } from '../db/client.js';
 import { orgs, users } from '../db/schema.js';
-import { clearSession, establishSession, resolveSession } from '../auth/session.js';
+import { clearSession, establishSession, requireAuth, resolveSession } from '../auth/session.js';
 import { isAuthThrottled, recordAuthFailure } from '../services/rateLimit.js';
 
 const setupSchema = z.object({
@@ -23,8 +23,14 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
-function publicUser(u: { id: string; email: string; name: string; role: string }) {
-  return { id: u.id, email: u.email, name: u.name, role: u.role };
+function publicUser(u: {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  uiLocale: string;
+}) {
+  return { id: u.id, email: u.email, name: u.name, role: u.role, uiLocale: u.uiLocale };
 }
 function publicOrg(o: {
   id: string;
@@ -137,5 +143,22 @@ export function registerAuthRoutes(app: FastifyInstance): void {
     const session = await resolveSession(req);
     if (!session) return reply.code(401).send({ error: 'Not authenticated' });
     return { user: publicUser(session.user), org: publicOrg(session.org) };
+  });
+
+  /**
+   * Per-user preferences (currently just the dashboard language). Uses the
+   * same requireAuth guard as the /api routes, so the CSRF double-submit
+   * check applies to this mutation too.
+   */
+  app.patch('/api/auth/me', { preHandler: requireAuth }, async (req, reply) => {
+    const parsed = z.object({ uiLocale: z.enum(['en', 'es']) }).safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'Invalid input' });
+    const db = getDb();
+    const [user] = await db
+      .update(users)
+      .set({ uiLocale: parsed.data.uiLocale, updatedAt: new Date() })
+      .where(eq(users.id, req.authUser!.id))
+      .returning();
+    return { user: publicUser(user), org: publicOrg(req.authOrg!) };
   });
 }

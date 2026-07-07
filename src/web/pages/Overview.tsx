@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
-import { api, fmtDate, timeAgo } from '../api';
-import { Card, PageHeader, Spinner, Sparkline, statusBadge } from '../components';
+import { api } from '../api';
+import { Card, PageHeader, Spinner, Sparkline, StatusBadge } from '../components';
+import { useFmt, useT } from '../i18n';
 
 interface OverviewData {
   activeWorkers: number;
@@ -39,6 +40,8 @@ function Stat({ label, value, accent }: { label: string; value: number; accent?:
 
 export default function Overview() {
   const [data, setData] = useState<OverviewData | null>(null);
+  const t = useT();
+  const { fmtDate, timeAgo } = useFmt();
   useEffect(() => {
     void api<OverviewData>('/api/overview').then(setData);
   }, []);
@@ -48,23 +51,23 @@ export default function Overview() {
 
   return (
     <div>
-      <PageHeader title="Overview" subtitle="Training and compliance activity across your dairy." />
+      <PageHeader title={t.overview.title} subtitle={t.overview.subtitle} />
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat label="Active workers" value={data.activeWorkers} />
-        <Stat label="Questions this week" value={data.questionsThisWeek} />
-        <Stat label="Modules delivered (7d)" value={data.modulesDeliveredThisWeek} />
-        <Stat label="Open knowledge gaps" value={data.openKnowledgeGaps} accent />
+        <Stat label={t.overview.activeWorkers} value={data.activeWorkers} />
+        <Stat label={t.overview.questionsThisWeek} value={data.questionsThisWeek} />
+        <Stat label={t.overview.modulesDelivered7d} value={data.modulesDeliveredThisWeek} />
+        <Stat label={t.overview.openKnowledgeGaps} value={data.openKnowledgeGaps} accent />
       </div>
 
       {(data.dataDeletions ?? []).length > 0 && (
         <Card className="mt-4 p-4">
-          <h2 className="text-sm font-medium text-foreground">Data deletion notices</h2>
+          <h2 className="text-sm font-medium text-foreground">{t.overview.deletionNoticesTitle}</h2>
           <ul className="mt-1 space-y-0.5 text-sm text-muted-foreground">
             {data.dataDeletions.map((d) => (
               <li key={d.id}>
-                1 worker record was permanently redacted at the worker's request on{' '}
-                <span className="font-mono tabular-nums">{fmtDate(d.deletedAt)}</span>. Their
-                training counts left the records; who asked is deliberately not recorded.
+                {t.overview.deletionBeforeDate}{' '}
+                <span className="font-mono tabular-nums">{fmtDate(d.deletedAt)}</span>
+                {t.overview.deletionAfterDate}
               </li>
             ))}
           </ul>
@@ -73,9 +76,9 @@ export default function Overview() {
 
       <Card className="mt-4 p-5">
         <div className="mb-2 flex items-baseline justify-between">
-          <h2 className="text-sm font-medium text-foreground">Training activity — last 14 days</h2>
+          <h2 className="text-sm font-medium text-foreground">{t.overview.activityTitle}</h2>
           <span className="font-mono text-xs tabular-nums text-muted-foreground">
-            {totalEvents} events
+            {t.overview.eventsCount(totalEvents)}
           </span>
         </div>
         <Sparkline data={data.sparkline} />
@@ -87,17 +90,17 @@ export default function Overview() {
 
       <Card className="mt-4">
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
-          <h2 className="text-sm font-medium text-foreground">Recent escalations</h2>
+          <h2 className="text-sm font-medium text-foreground">{t.overview.recentEscalations}</h2>
           <Link
             to="/conversations"
             className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
           >
-            View all
+            {t.overview.viewAll}
             <ArrowRight className="size-3.5" aria-hidden="true" />
           </Link>
         </div>
         {data.recentEscalations.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-muted-foreground">No open escalations.</p>
+          <p className="px-5 py-6 text-sm text-muted-foreground">{t.overview.noOpenEscalations}</p>
         ) : (
           <ul className="divide-y divide-border">
             {data.recentEscalations.map((e) => (
@@ -108,7 +111,7 @@ export default function Overview() {
                     {e.workerName} · {e.reason} · {timeAgo(e.createdAt)}
                   </p>
                 </div>
-                {statusBadge(e.status)}
+                <StatusBadge status={e.status} />
               </li>
             ))}
           </ul>

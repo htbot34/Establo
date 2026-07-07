@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Moon, Sun } from 'lucide-react';
+import { useT } from './i18n/context';
 
 export type Theme = 'light' | 'dark';
 const STORAGE_KEY = 'establo-theme';
@@ -25,6 +26,7 @@ export function applyTheme(theme: Theme): void {
 
 export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
+  const t = useT();
 
   useEffect(() => {
     applyTheme(theme);
@@ -59,13 +61,14 @@ export function ThemeToggle() {
     });
   }
 
-  const nextLabel = theme === 'dark' ? 'light' : 'dark';
+  const nextLabel =
+    theme === 'dark' ? t.themeToggle.switchToLight : t.themeToggle.switchToDark;
   return (
     <button
       type="button"
       onClick={toggle}
-      aria-label={`Switch to ${nextLabel} mode`}
-      title={`Switch to ${nextLabel} mode`}
+      aria-label={nextLabel}
+      title={nextLabel}
       className="inline-flex size-8 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       {theme === 'dark' ? (

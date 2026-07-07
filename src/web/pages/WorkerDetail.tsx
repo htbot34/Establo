@@ -16,13 +16,13 @@ import {
   PenLine,
   type LucideIcon,
 } from 'lucide-react';
-import { api, fmtDate, fmtDateTime, IS_DEMO, timeAgo } from '../api';
-import { roleApplies, WORKER_ROLES, WORKER_ROLE_LABELS } from '../../server/services/roles';
+import { api, IS_DEMO } from '../api';
+import { roleApplies, WORKER_ROLES } from '../../server/services/roles';
 import {
   Badge,
   Button,
   Card,
-  consentBadge,
+  ConsentBadge,
   ErrorNote,
   Input,
   Label,
@@ -30,8 +30,9 @@ import {
   PageHeader,
   Select,
   Spinner,
-  statusBadge,
+  StatusBadge,
 } from '../components';
+import { useFmt, useT, type Dictionary } from '../i18n';
 
 interface Delivery {
   id: string;
@@ -107,22 +108,21 @@ interface TrackModules {
   modules: Array<{ appliesToRoles: string[] | null }>;
 }
 
-const EVENT_STYLE: Record<string, { label: string; color: string; icon: LucideIcon }> = {
-  qa_interaction: { label: 'Q&A', color: 'blue', icon: MessagesSquare },
-  module_delivered: { label: 'Module delivered', color: 'stone', icon: BookOpen },
-  check_passed: { label: 'Check passed', color: 'green', icon: CircleCheck },
-  check_failed: { label: 'Check missed', color: 'amber', icon: CircleAlert },
-  escalation: { label: 'Escalated', color: 'red', icon: Flag },
+const EVENT_STYLE: Record<string, { color: string; icon: LucideIcon }> = {
+  qa_interaction: { color: 'blue', icon: MessagesSquare },
+  module_delivered: { color: 'stone', icon: BookOpen },
+  check_passed: { color: 'green', icon: CircleCheck },
+  check_failed: { color: 'amber', icon: CircleAlert },
+  escalation: { color: 'red', icon: Flag },
 };
 
-const FARM_LABELS: Record<string, string> = {
-  stockmanship_general: 'FARM: stockmanship',
-  preweaned_calf: 'FARM: calf care',
-  non_ambulatory: 'FARM: non-ambulatory',
-  euthanasia: 'FARM: euthanasia',
-  fitness_to_transport: 'FARM: transport',
-  safety_other: 'safety',
-};
+function eventLabel(t: Dictionary, eventType: string): string {
+  return t.events[eventType as keyof Dictionary['events']] ?? eventType;
+}
+
+function farmLabel(t: Dictionary, farmTopic: string): string | undefined {
+  return t.farm.short[farmTopic as keyof Dictionary['farm']['short']];
+}
 
 export default function WorkerDetail() {
   const { id } = useParams<{ id: string }>();
@@ -136,6 +136,8 @@ export default function WorkerDetail() {
   const [attestName, setAttestName] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const t = useT();
+  const { fmtDate, fmtDateTime, timeAgo } = useFmt();
 
   const load = useCallback(async () => {
     setData(await api<WorkerDetailData>(`/api/workers/${id}`));
@@ -153,12 +155,12 @@ export default function WorkerDetail() {
       return;
     }
     let cancelled = false;
-    void api<TrackModules>(`/api/tracks/${trackId}`).then((t) => {
+    void api<TrackModules>(`/api/tracks/${trackId}`).then((track) => {
       if (cancelled) return;
-      const applicable = t.modules.filter((m) =>
+      const applicable = track.modules.filter((m) =>
         roleApplies(m.appliesToRoles, data?.jobRole ?? null),
       ).length;
-      setTrackPreview({ applicable, total: t.modules.length });
+      setTrackPreview({ applicable, total: track.modules.length });
     });
     return () => {
       cancelled = true;
@@ -207,9 +209,7 @@ export default function WorkerDetail() {
         body: {},
       });
       setNote(
-        r.outcome === 'sent'
-          ? 'Agreement sent — the worker signs by replying ACEPTO.'
-          : 'Agreement queued — it goes out the next time the worker writes (24h window is closed).',
+        r.outcome === 'sent' ? t.workerDetail.agreementSentNote : t.workerDetail.agreementQueuedNote,
       );
       await load();
     } catch (err) {
@@ -268,16 +268,16 @@ export default function WorkerDetail() {
       <div className="mb-2 text-xs">
         <Link to="/workers" className="inline-flex items-center gap-1 text-primary hover:underline">
           <ArrowLeft className="size-3.5" aria-hidden="true" />
-          Workers
+          {t.nav.workers}
         </Link>
       </div>
       <PageHeader
         title={data.name}
         subtitle={
           <span>
-            <span className="font-mono">{data.phoneE164}</span> · hired{' '}
-            <span className="font-mono tabular-nums">{fmtDate(data.hiredAt)}</span> · last active{' '}
-            {timeAgo(data.lastInboundAt)}
+            <span className="font-mono">{data.phoneE164}</span> · {t.workerDetail.hired}{' '}
+            <span className="font-mono tabular-nums">{fmtDate(data.hiredAt)}</span> ·{' '}
+            {t.workerDetail.lastActive} {timeAgo(data.lastInboundAt)}
           </span>
         }
         actions={
@@ -285,13 +285,13 @@ export default function WorkerDetail() {
             <>
               {!IS_DEMO && (
                 <a href={`/api/workers/${data.id}/transcript.pdf`}>
-                  <Button variant="secondary">Download transcript PDF</Button>
+                  <Button variant="secondary">{t.workerDetail.downloadTranscript}</Button>
                 </a>
               )}
               <Button variant="danger" onClick={() => setConfirmingDelete(true)}>
-                Delete worker data
+                {t.workerDetail.deleteData}
               </Button>
-              <Button onClick={() => setEnrolling(true)}>Enroll in track</Button>
+              <Button onClick={() => setEnrolling(true)}>{t.workerDetail.enrollInTrack}</Button>
             </>
           )
         }
@@ -299,9 +299,8 @@ export default function WorkerDetail() {
       <ErrorNote error={error} />
       {data.deletedAt && (
         <div className="mb-3 rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
-          This worker's data was permanently deleted on {fmtDate(data.deletedAt)}. Name, phone and
-          message content are gone; the remaining entries below are non-identifying training
-          records (topic, check results, timestamps).
+          {t.workerDetail.deletedBefore} {fmtDate(data.deletedAt)}
+          {t.workerDetail.deletedAfter}
         </div>
       )}
       {note && (
@@ -313,17 +312,15 @@ export default function WorkerDetail() {
       {/* ── Job role (drives role-scoped onboarding) ── */}
       <Card className="mb-4 flex flex-wrap items-center gap-3 p-4">
         <div>
-          <h2 className="text-sm font-medium text-foreground">Job role</h2>
-          <p className="text-xs text-muted-foreground">
-            Decides which role-specific lessons this worker receives when enrolled.
-          </p>
+          <h2 className="text-sm font-medium text-foreground">{t.workerDetail.jobRoleTitle}</h2>
+          <p className="text-xs text-muted-foreground">{t.workerDetail.jobRoleHint}</p>
         </div>
         <div className="w-64">
           <Select value={data.jobRole ?? ''} onChange={(e) => void setRole(e.target.value)}>
-            <option value="">Unassigned (universal lessons only)</option>
+            <option value="">{t.workers.unassignedOption}</option>
             {WORKER_ROLES.map((r) => (
               <option key={r} value={r}>
-                {WORKER_ROLE_LABELS[r]}
+                {t.roles[r]}
               </option>
             ))}
           </Select>
@@ -333,11 +330,8 @@ export default function WorkerDetail() {
       {/* ── Voice replies (per-worker always-send-audio toggle) ── */}
       <Card className="mb-4 flex flex-wrap items-center gap-3 p-4">
         <div className="min-w-64 flex-1">
-          <h2 className="text-sm font-medium text-foreground">Always send voice notes</h2>
-          <p className="text-xs text-muted-foreground">
-            Attach a spoken voice note to every answer and check reply — not only when this
-            worker sends audio. Lessons always include audio.
-          </p>
+          <h2 className="text-sm font-medium text-foreground">{t.workerDetail.voiceTitle}</h2>
+          <p className="text-xs text-muted-foreground">{t.workerDetail.voiceHint}</p>
         </div>
         <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
           <input
@@ -346,7 +340,7 @@ export default function WorkerDetail() {
             checked={!!data.alwaysAudio}
             onChange={(e) => void setAlwaysAudio(e.target.checked)}
           />
-          {data.alwaysAudio ? 'On' : 'Off'}
+          {data.alwaysAudio ? t.common.on : t.common.off}
         </label>
       </Card>
 
@@ -354,48 +348,54 @@ export default function WorkerDetail() {
       <Card className="mb-4 p-5">
         <div className="grid gap-5 sm:grid-cols-2">
           <div>
-            <h2 className="mb-1.5 text-sm font-medium text-foreground">WhatsApp consent</h2>
+            <h2 className="mb-1.5 text-sm font-medium text-foreground">
+              {t.workerDetail.consentTitle}
+            </h2>
             <div className="flex items-center gap-2 text-sm">
-              {consentBadge(consent)}
+              <ConsentBadge status={consent} />
               {data.consentedAt && (
                 <span className="text-xs text-muted-foreground">
                   <span className="font-mono tabular-nums">{fmtDate(data.consentedAt)}</span>
-                  {data.consentMethod ? ` · ${data.consentMethod.replace(/_/g, ' ')}` : ''}
-                  {data.consentAttestedBy ? ` · attested by ${data.consentAttestedBy}` : ''}
+                  {data.consentMethod
+                    ? ` · ${
+                        t.consent.methods[data.consentMethod as keyof Dictionary['consent']['methods']] ??
+                        data.consentMethod.replace(/_/g, ' ')
+                      }`
+                    : ''}
+                  {data.consentAttestedBy
+                    ? ` · ${t.workerDetail.attestedBy(data.consentAttestedBy)}`
+                    : ''}
                 </span>
               )}
             </div>
             {consent === 'pending' && (
               <div className="mt-2 space-y-2">
-                <p className="text-xs text-muted-foreground">
-                  Establo sends nothing until this worker opts in: they text the number (ALTA or
-                  any first message), or you collect the printed consent form and attest it here.
-                </p>
+                <p className="text-xs text-muted-foreground">{t.workerDetail.consentPendingHint}</p>
                 <Button variant="secondary" onClick={() => setAttesting('consent')}>
-                  <PenLine aria-hidden="true" /> Consent collected on paper
+                  <PenLine aria-hidden="true" /> {t.workerDetail.consentPaperButton}
                 </Button>
               </div>
             )}
             {consent === 'opted_out' && (
-              <p className="mt-2 text-xs text-destructive">
-                This worker texted BAJA. All sends are blocked until they text ALTA themselves —
-                this cannot be overridden from the dashboard.
-              </p>
+              <p className="mt-2 text-xs text-destructive">{t.workerDetail.optedOutNote}</p>
             )}
           </div>
           <div>
-            <h2 className="mb-1.5 text-sm font-medium text-foreground">Cow care agreement</h2>
+            <h2 className="mb-1.5 text-sm font-medium text-foreground">
+              {t.workerDetail.agreementTitle}
+            </h2>
             {agr?.signed ? (
               <div className="flex items-center gap-1.5 text-sm text-foreground">
                 <CircleCheck className="size-4 text-success" aria-hidden="true" />
                 <span>
-                  Signed <span className="font-mono">v{agr.version}</span> on{' '}
-                  <span className="font-mono tabular-nums">{fmtDate(agr.signedAt)}</span> via{' '}
-                  {agr.method}
+                  {t.workerDetail.signed} <span className="font-mono">v{agr.version}</span>{' '}
+                  {t.workerDetail.on}{' '}
+                  <span className="font-mono tabular-nums">{fmtDate(agr.signedAt)}</span>{' '}
+                  {t.workerDetail.via} {agr.method}
                 </span>
                 {agr.renewalDue && (
                   <span className="ml-1">
-                    <Badge color="amber">annual renewal due</Badge>
+                    <Badge color="amber">{t.workerDetail.annualRenewalDue}</Badge>
                   </span>
                 )}
               </div>
@@ -403,30 +403,30 @@ export default function WorkerDetail() {
               <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                 <Hourglass className="size-4" aria-hidden="true" />
                 <span>
-                  Sent <span className="font-mono tabular-nums">{fmtDateTime(agr.pendingSince)}</span>{' '}
-                  — waiting for the worker to reply <strong>ACEPTO</strong>
+                  {t.workerDetail.sentPending}{' '}
+                  <span className="font-mono tabular-nums">{fmtDateTime(agr.pendingSince)}</span>{' '}
+                  {t.workerDetail.awaitingAcepto} <strong>ACEPTO</strong>
                 </span>
               </div>
             ) : (
-              <div className="text-sm text-muted-foreground">Not signed</div>
+              <div className="text-sm text-muted-foreground">{t.workerDetail.notSigned}</div>
             )}
             <div className="mt-2 flex flex-wrap gap-2">
               <Button
                 variant="secondary"
                 onClick={() => void sendAgreement()}
                 disabled={consent !== 'opted_in'}
-                title={consent !== 'opted_in' ? 'Worker must opt in first' : undefined}
+                title={consent !== 'opted_in' ? t.workerDetail.mustOptInFirst : undefined}
               >
                 <Mail aria-hidden="true" />
-                {agr?.signed ? 'Send for re-signature' : 'Send via WhatsApp'}
+                {agr?.signed ? t.workerDetail.sendForResignature : t.workerDetail.sendViaWhatsapp}
               </Button>
               <Button variant="secondary" onClick={() => setAttesting('agreement')}>
-                <PenLine aria-hidden="true" /> Mark signed on paper
+                <PenLine aria-hidden="true" /> {t.workerDetail.markSignedPaper}
               </Button>
             </div>
             <p className="mt-1.5 text-xs text-muted-foreground">
-              FARM Animal Care v5 expects a signed cow care agreement for every employee with
-              animal care responsibilities, renewed annually.
+              {t.workerDetail.farmAgreementNote}
             </p>
           </div>
         </div>
@@ -439,25 +439,27 @@ export default function WorkerDetail() {
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium text-foreground">{enr.trackName}</span>
-                  {statusBadge(enr.status)}
+                  <StatusBadge status={enr.status} />
                   {enr.status === 'completed' &&
                     (enr.signedOffAt ? (
                       <span className="inline-flex items-center gap-1 text-xs text-success">
                         <Check className="size-3.5" aria-hidden="true" />
-                        Confirmed by {enr.signedOffName} ({enr.signedOffRole}) on{' '}
+                        {t.workerDetail.confirmedBy(enr.signedOffName ?? '', enr.signedOffRole ?? '')}{' '}
                         <span className="font-mono tabular-nums">{fmtDate(enr.signedOffAt)}</span>
                       </span>
                     ) : (
-                      <Badge color="amber">completion not confirmed</Badge>
+                      <Badge color="amber">{t.workerDetail.completionNotConfirmed}</Badge>
                     ))}
                 </div>
                 <div className="flex items-center gap-3 text-xs text-muted-foreground">
                   <span>
-                    started{' '}
+                    {t.workerDetail.started}{' '}
                     <span className="font-mono tabular-nums">{fmtDate(enr.startedAt)}</span>
                   </span>
                   {enr.status === 'completed' && !enr.signedOffAt && (
-                    <Button onClick={() => void signOff(enr.id)}>Confirm completion</Button>
+                    <Button onClick={() => void signOff(enr.id)}>
+                      {t.workerDetail.confirmCompletion}
+                    </Button>
                   )}
                   {enr.certificateUrl && (
                     <a
@@ -465,7 +467,7 @@ export default function WorkerDetail() {
                       className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
                     >
                       <GraduationCap className="size-3.5" aria-hidden="true" />
-                      Certificate PDF
+                      {t.workerDetail.certificatePdf}
                     </a>
                   )}
                 </div>
@@ -480,16 +482,20 @@ export default function WorkerDetail() {
                     {d.checkPassed !== null &&
                       (d.checkPassed ? (
                         <span className="inline-flex items-center gap-1 text-xs text-success">
-                          <CircleCheck className="size-3.5" aria-hidden="true" /> passed
+                          <CircleCheck className="size-3.5" aria-hidden="true" />{' '}
+                          {t.workerDetail.checkPassed}
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-xs text-warning">
-                          <CircleAlert className="size-3.5" aria-hidden="true" /> missed
+                          <CircleAlert className="size-3.5" aria-hidden="true" />{' '}
+                          {t.workerDetail.checkMissed}
                         </span>
                       ))}
-                    {statusBadge(d.status)}
+                    <StatusBadge status={d.status} />
                     <span className="w-36 text-right font-mono text-xs tabular-nums text-muted-foreground">
-                      {d.sentAt ? fmtDateTime(d.sentAt) : `due ${fmtDateTime(d.scheduledFor)}`}
+                      {d.sentAt
+                        ? fmtDateTime(d.sentAt)
+                        : t.workerDetail.due(fmtDateTime(d.scheduledFor))}
                     </span>
                   </li>
                 ))}
@@ -497,8 +503,7 @@ export default function WorkerDetail() {
               {enr.status === 'active' && consent === 'pending' && (
                 <p className="badge-warning mt-3 flex items-center gap-1.5 rounded-md px-3 py-2 text-xs">
                   <CirclePause className="size-3.5 shrink-0" aria-hidden="true" />
-                  Awaiting opt-in — lessons are scheduled but nothing is sent until this worker opts
-                  in on WhatsApp.
+                  {t.workerDetail.awaitingOptInNote}
                 </p>
               )}
             </Card>
@@ -509,12 +514,14 @@ export default function WorkerDetail() {
       <Card>
         <div className="border-b border-border px-5 py-3">
           <h2 className="text-sm font-medium text-foreground">
-            Training transcript{' '}
-            <span className="font-normal text-muted-foreground">— every logged event, newest first</span>
+            {t.workerDetail.transcriptTitle}{' '}
+            <span className="font-normal text-muted-foreground">
+              {t.workerDetail.transcriptSubtitle}
+            </span>
           </h2>
         </div>
         {data.events.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-muted-foreground">No training events yet.</p>
+          <p className="px-5 py-6 text-sm text-muted-foreground">{t.workerDetail.noEvents}</p>
         ) : (
           <ul className="divide-y divide-border">
             {data.events.map((ev) => {
@@ -524,10 +531,10 @@ export default function WorkerDetail() {
                 <li key={ev.id} className="px-5 py-3">
                   <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                     <Icon className="size-3.5 shrink-0" aria-hidden="true" />
-                    <Badge color={style.color}>{style.label}</Badge>
+                    <Badge color={style.color}>{eventLabel(t, ev.eventType)}</Badge>
                     <Badge>{ev.topic}</Badge>
-                    {ev.farmTopic && FARM_LABELS[ev.farmTopic] && (
-                      <Badge color="green">{FARM_LABELS[ev.farmTopic]}</Badge>
+                    {ev.farmTopic && farmLabel(t, ev.farmTopic) && (
+                      <Badge color="green">{farmLabel(t, ev.farmTopic)}</Badge>
                     )}
                     {ev.confidence && ev.confidence !== 'grounded' && (
                       <Badge color="amber">{ev.confidence}</Badge>
@@ -554,67 +561,67 @@ export default function WorkerDetail() {
       </Card>
 
       {confirmingDelete && (
-        <Modal title="Delete worker data" onClose={() => setConfirmingDelete(false)}>
+        <Modal title={t.workerDetail.deleteTitle} onClose={() => setConfirmingDelete(false)}>
           <ErrorNote error={error} />
           <p className="mb-3 text-sm text-muted-foreground">
-            This permanently deletes <strong>{data.name}</strong>'s name, phone number and all
-            message content, exactly as if they had texted BORRAR MIS DATOS. Training events keep
-            only their non-identifying documentation fields (topic, check results, timestamps),
-            and the worker is excluded from all future audit exports. This cannot be undone.
+            {t.workerDetail.deleteBody1} <strong>{data.name}</strong>
+            {t.workerDetail.deleteBody2}
           </p>
           <div className="mt-4 flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setConfirmingDelete(false)}>Cancel</Button>
+            <Button variant="secondary" onClick={() => setConfirmingDelete(false)}>
+              {t.common.cancel}
+            </Button>
             <Button variant="danger" onClick={() => void deleteData()}>
-              Permanently delete
+              {t.workerDetail.permanentlyDelete}
             </Button>
           </div>
         </Modal>
       )}
 
       {enrolling && (
-        <Modal title={`Enroll ${data.name}`} onClose={() => setEnrolling(false)}>
+        <Modal title={t.workerDetail.enrollTitle(data.name)} onClose={() => setEnrolling(false)}>
           <ErrorNote error={error} />
-          <Label>Onboarding track</Label>
+          <Label>{t.workerDetail.trackLabel}</Label>
           <Select value={trackId} onChange={(e) => setTrackId(e.target.value)}>
-            <option value="">Choose a track…</option>
-            {tracks.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name} ({t.moduleCount} modules)
+            <option value="">{t.workerDetail.chooseTrack}</option>
+            {tracks.map((track) => (
+              <option key={track.id} value={track.id}>
+                {t.workerDetail.trackOption(track.name, track.moduleCount)}
               </option>
             ))}
           </Select>
           {trackId && trackPreview && (
             <p className="mt-3 rounded-md bg-navactive-bg px-3 py-2 text-sm text-navactive-fg">
-              This worker{' '}
+              {t.workerDetail.previewWorker}{' '}
               {data.jobRole ? (
                 <>
-                  (role: <strong>{WORKER_ROLE_LABELS[data.jobRole as keyof typeof WORKER_ROLE_LABELS]}</strong>)
+                  ({t.workerDetail.previewRole}{' '}
+                  <strong>{t.roles[data.jobRole as keyof Dictionary['roles']]}</strong>)
                 </>
               ) : (
-                '(unassigned)'
+                t.workerDetail.previewUnassigned
               )}{' '}
-              will receive{' '}
+              {t.workerDetail.previewReceive}{' '}
               <strong className="font-mono tabular-nums">
-                {trackPreview.applicable} of {trackPreview.total}
+                {t.workerDetail.previewOf(trackPreview.applicable, trackPreview.total)}
               </strong>{' '}
-              lessons based on their role.
-              {trackPreview.applicable === 0 &&
-                ' No lessons in this track apply to this role — assign a different role or pick another track.'}
+              {t.workerDetail.previewLessons}
+              {trackPreview.applicable === 0 && <> {t.workerDetail.previewNoneApply}</>}
             </p>
           )}
           <p className="mt-2 text-xs text-muted-foreground">
-            Modules are scheduled from today using each module's day offset, and sent by the
-            scheduler at the configured local hour.
-            {consent !== 'opted_in' &&
-              ' This worker has not opted in yet — nothing is sent until they do.'}
+            {t.workerDetail.scheduleNote}
+            {consent !== 'opted_in' && <> {t.workerDetail.notOptedInNote}</>}
           </p>
           <div className="mt-4 flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setEnrolling(false)}>Cancel</Button>
+            <Button variant="secondary" onClick={() => setEnrolling(false)}>
+              {t.common.cancel}
+            </Button>
             <Button
               disabled={!trackId || trackPreview?.applicable === 0}
               onClick={() => void enroll()}
             >
-              Enroll
+              {t.workerDetail.enroll}
             </Button>
           </div>
         </Modal>
@@ -624,27 +631,29 @@ export default function WorkerDetail() {
         <Modal
           title={
             attesting === 'consent'
-              ? 'Consent collected on paper'
-              : 'Agreement signed on paper'
+              ? t.workerDetail.attestConsentTitle
+              : t.workerDetail.attestAgreementTitle
           }
           onClose={() => setAttesting(null)}
         >
           <ErrorNote error={error} />
           <p className="mb-3 text-sm text-muted-foreground">
             {attesting === 'consent'
-              ? `Confirm that ${data.name} signed the printed WhatsApp-consent form. Keep the paper form in their file.`
-              : `Confirm that ${data.name} signed the cow care agreement on paper. Keep the signed copy in their file.`}
+              ? t.workerDetail.attestConsentBody(data.name)
+              : t.workerDetail.attestAgreementBody(data.name)}
           </p>
-          <Label>Your full name (attestation)</Label>
+          <Label>{t.workerDetail.attestNameLabel}</Label>
           <Input
             value={attestName}
             onChange={(e) => setAttestName(e.target.value)}
             placeholder="Sarah Whitfield"
           />
           <div className="mt-4 flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setAttesting(null)}>Cancel</Button>
+            <Button variant="secondary" onClick={() => setAttesting(null)}>
+              {t.common.cancel}
+            </Button>
             <Button disabled={attestName.trim().length < 2} onClick={() => void attest()}>
-              Attest
+              {t.workerDetail.attest}
             </Button>
           </div>
         </Modal>

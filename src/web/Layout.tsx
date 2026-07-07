@@ -12,27 +12,28 @@ import {
   TriangleAlert,
   type LucideIcon,
 } from 'lucide-react';
-import { api, fmtDateTime, IS_DEMO } from './api';
+import { api, IS_DEMO } from './api';
 import { useAuth } from './auth';
 import { Spinner } from './components';
 import { Logomark } from './brand/Logomark';
+import { LocaleToggle, useFmt, useT, type Dictionary } from './i18n';
 import { ThemeToggle } from './theme';
 
 interface NavItem {
   to: string;
-  label: string;
+  label: (t: Dictionary) => string;
   icon: LucideIcon;
   end?: boolean;
 }
 
 const NAV: NavItem[] = [
-  { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
-  { to: '/sops', label: 'SOPs', icon: FileText },
-  { to: '/workers', label: 'Workers', icon: Users },
-  { to: '/onboarding', label: 'Onboarding', icon: GraduationCap },
-  { to: '/conversations', label: 'Conversations', icon: MessagesSquare },
-  { to: '/audit', label: 'Audit & Exports', icon: FolderArchive },
-  { to: '/settings', label: 'Settings', icon: SettingsIcon },
+  { to: '/', label: (t) => t.nav.overview, icon: LayoutDashboard, end: true },
+  { to: '/sops', label: (t) => t.nav.sops, icon: FileText },
+  { to: '/workers', label: (t) => t.nav.workers, icon: Users },
+  { to: '/onboarding', label: (t) => t.nav.onboarding, icon: GraduationCap },
+  { to: '/conversations', label: (t) => t.nav.conversations, icon: MessagesSquare },
+  { to: '/audit', label: (t) => t.nav.audit, icon: FolderArchive },
+  { to: '/settings', label: (t) => t.nav.settings, icon: SettingsIcon },
 ];
 
 interface Alerts {
@@ -47,6 +48,8 @@ interface Alerts {
 function TemplateAlertBanner({ role }: { role: string }) {
   const [alerts, setAlerts] = useState<Alerts | null>(null);
   const [busy, setBusy] = useState(false);
+  const t = useT();
+  const { fmtDateTime } = useFmt();
 
   useEffect(() => {
     let cancelled = false;
@@ -59,10 +62,10 @@ function TemplateAlertBanner({ role }: { role: string }) {
       }
     };
     void poll();
-    const t = setInterval(() => void poll(), 30_000);
+    const timer = setInterval(() => void poll(), 30_000);
     return () => {
       cancelled = true;
-      clearInterval(t);
+      clearInterval(timer);
     };
   }, []);
 
@@ -82,10 +85,9 @@ function TemplateAlertBanner({ role }: { role: string }) {
     <div className="z-20 flex items-center justify-center gap-3 bg-destructive px-4 py-2 pl-60 text-center text-xs font-medium text-destructive-foreground">
       <span className="inline-flex items-center gap-2">
         <TriangleAlert className="size-4 shrink-0" aria-hidden="true" />
-        WhatsApp template delivery is failing — possible category change; drip lessons are paused
-        for affected workers. {alerts.templatePauseReason} (since{' '}
-        <span className="tnum font-mono">{fmtDateTime(alerts.templatePausedAt)}</span>). See the
-        RUNBOOK section "Template failure banner".
+        {t.layout.templateAlert.body} {alerts.templatePauseReason} ({t.layout.templateAlert.since}{' '}
+        <span className="tnum font-mono">{fmtDateTime(alerts.templatePausedAt)}</span>).{' '}
+        {t.layout.templateAlert.seeRunbook}
       </span>
       {role === 'owner' && (
         <button
@@ -93,7 +95,7 @@ function TemplateAlertBanner({ role }: { role: string }) {
           disabled={busy}
           className="shrink-0 rounded bg-white/20 px-2.5 py-1 font-semibold hover:bg-white/30 disabled:opacity-50"
         >
-          {busy ? 'Resuming…' : 'Acknowledge & resume'}
+          {busy ? t.layout.templateAlert.resuming : t.layout.templateAlert.acknowledge}
         </button>
       )}
     </div>
@@ -102,12 +104,13 @@ function TemplateAlertBanner({ role }: { role: string }) {
 
 export default function Layout() {
   const { me, loading, runMode, logout } = useAuth();
-  if (loading) return <Spinner label="Loading Establo…" />;
+  const t = useT();
+  if (loading) return <Spinner label={t.layout.loadingApp} />;
   if (!me) return <Navigate to="/login" replace />;
 
   const nav = [...NAV];
   if (runMode === 'mock' || runMode === 'demo') {
-    nav.push({ to: '/simulator', label: 'Simulator', icon: Smartphone });
+    nav.push({ to: '/simulator', label: (t) => t.nav.simulator, icon: Smartphone });
   }
 
   return (
@@ -115,16 +118,14 @@ export default function Layout() {
       <TemplateAlertBanner role={me.user.role} />
       {IS_DEMO && (
         <div className="z-10 badge-warning px-4 py-1.5 pl-60 text-center text-xs">
-          <strong>Hosted demo</strong> — sample dairy, data resets on reload. Answers here are
-          verbatim SOP extracts; the full system answers with Claude, voice notes, and real
-          WhatsApp.{' '}
+          <strong>{t.layout.demoBanner.title}</strong> {t.layout.demoBanner.body}{' '}
           <a
             className="font-semibold underline"
             href="https://github.com/htbot34/Establo#readme"
             target="_blank"
             rel="noreferrer"
           >
-            Run the real thing
+            {t.layout.demoBanner.cta}
           </a>
         </div>
       )}
@@ -156,10 +157,10 @@ export default function Layout() {
                   }
                 >
                   <Icon className="size-[18px] shrink-0" aria-hidden="true" />
-                  {item.label}
+                  {item.label(t)}
                   {item.to === '/simulator' && (
                     <span className="ml-auto rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                      mock
+                      {t.nav.mockTag}
                     </span>
                   )}
                 </NavLink>
@@ -167,7 +168,8 @@ export default function Layout() {
             })}
           </nav>
           <div className="border-t border-border px-5 py-4">
-            <div className="mb-2 flex justify-end">
+            <div className="mb-2 flex items-center justify-end gap-2">
+              <LocaleToggle />
               <ThemeToggle />
             </div>
             <div className="truncate text-xs font-medium text-secondary-foreground">
@@ -178,7 +180,7 @@ export default function Layout() {
               onClick={() => void logout()}
               className="mt-2 text-xs font-medium text-primary hover:underline"
             >
-              Sign out
+              {t.layout.signOut}
             </button>
           </div>
         </aside>

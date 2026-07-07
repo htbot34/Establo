@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, fmtDate, IS_DEMO } from '../api';
+import { api, IS_DEMO } from '../api';
 import {
   Button,
   Card,
@@ -8,8 +8,9 @@ import {
   Modal,
   PageHeader,
   Spinner,
-  statusBadge,
+  StatusBadge,
 } from '../components';
+import { useFmt, useT } from '../i18n';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 
 interface SopDoc {
@@ -36,6 +37,8 @@ export default function Sops() {
   const [asPages, setAsPages] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const t = useT();
+  const { fmtDate } = useFmt();
 
   const load = useCallback(async () => {
     setDocs(await api<SopDoc[]>('/api/sops'));
@@ -48,8 +51,8 @@ export default function Sops() {
   // Poll while any doc is processing.
   useEffect(() => {
     if (!docs?.some((d) => d.status === 'processing' || d.status === 'uploaded')) return;
-    const t = setInterval(() => void load(), 2000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => void load(), 2000);
+    return () => clearInterval(timer);
   }, [docs, load]);
 
   async function upload(files: FileList | File[]) {
@@ -71,25 +74,21 @@ export default function Sops() {
   }
 
   async function remove(doc: SopDoc) {
-    if (!window.confirm(`Delete "${doc.title}" and all its chunks? Workers will no longer get answers from it.`)) return;
+    if (!window.confirm(t.sops.confirmDelete(doc.title))) return;
     await api(`/api/sops/${doc.id}`, { method: 'DELETE' });
     await load();
   }
 
   return (
     <div>
-      <PageHeader
-        title="SOPs"
-        subtitle="Upload your procedures (PDF, Word, or photos of paper SOPs). Establo answers workers only from these."
-      />
+      <PageHeader title={t.sops.title} subtitle={t.sops.subtitle} />
       <ErrorNote error={error} />
 
       {IS_DEMO && (
         <Card className="badge-warning mb-5 border border-warning/25 p-4 text-sm">
-          Document upload and OCR run on the real backend — this hosted demo ships with the{' '}
-          {docs ? `${docs.length} ` : ''}sample SOPs below (browse their extracted chunks with
-          "View text"). Clone the repo and run{' '}
-          <code className="rounded bg-warning/15 px-1 font-mono">pnpm dev</code> to ingest your own.
+          {t.sops.demoNote(docs ? `${docs.length} ` : '')}{' '}
+          <code className="rounded bg-warning/15 px-1 font-mono">pnpm dev</code>{' '}
+          {t.sops.demoNoteAfterCode}
         </Card>
       )}
       <Card
@@ -110,15 +109,15 @@ export default function Sops() {
           }}
         >
           <p className="text-sm text-foreground">
-            Drag &amp; drop files here, or{' '}
+            {t.sops.dropHere}{' '}
             <button
               className="font-medium text-primary underline"
               onClick={() => fileInput.current?.click()}
             >
-              browse
+              {t.sops.browse}
             </button>
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">PDF · DOCX · Markdown · JPG/PNG photos</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t.sops.fileTypes}</p>
           <label className="mt-3 inline-flex items-center gap-2 text-xs text-muted-foreground">
             <input
               type="checkbox"
@@ -126,9 +125,9 @@ export default function Sops() {
               onChange={(e) => setAsPages(e.target.checked)}
               className="rounded border-input"
             />
-            Selected images are pages of ONE document (photographed paper SOP)
+            {t.sops.asPages}
           </label>
-          {uploading && <p className="mt-2 text-xs font-medium text-primary">Uploading…</p>}
+          {uploading && <p className="mt-2 text-xs font-medium text-primary">{t.sops.uploading}</p>}
           <input
             ref={fileInput}
             type="file"
@@ -147,15 +146,15 @@ export default function Sops() {
         {!docs ? (
           <Spinner />
         ) : docs.length === 0 ? (
-          <EmptyState title="No SOPs yet" hint="Upload your first procedure above — or run pnpm seed for demo data." />
+          <EmptyState title={t.sops.emptyTitle} hint={t.sops.emptyHint} />
         ) : (
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="pl-5">Document</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Chunks</TableHead>
-                <TableHead>Uploaded</TableHead>
+                <TableHead className="pl-5">{t.sops.colDocument}</TableHead>
+                <TableHead>{t.sops.colStatus}</TableHead>
+                <TableHead className="text-right">{t.sops.colChunks}</TableHead>
+                <TableHead>{t.sops.colUploaded}</TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>
@@ -169,7 +168,9 @@ export default function Sops() {
                       {d.errorText && <span className="ml-2 text-destructive">{d.errorText}</span>}
                     </div>
                   </TableCell>
-                  <TableCell>{statusBadge(d.status)}</TableCell>
+                  <TableCell>
+                    <StatusBadge status={d.status} />
+                  </TableCell>
                   <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
                     {d.chunkCount}
                   </TableCell>
@@ -182,7 +183,7 @@ export default function Sops() {
                         variant="ghost"
                         onClick={() => void api<SopDetail>(`/api/sops/${d.id}`).then(setViewing)}
                       >
-                        View text
+                        {t.sops.viewText}
                       </Button>
                       {d.status === 'failed' && (
                         <Button
@@ -191,11 +192,11 @@ export default function Sops() {
                             void api(`/api/sops/${d.id}/reingest`, { method: 'POST' }).then(load)
                           }
                         >
-                          Retry
+                          {t.common.retry}
                         </Button>
                       )}
                       <Button variant="ghost" onClick={() => void remove(d)}>
-                        Delete
+                        {t.common.delete}
                       </Button>
                     </div>
                   </TableCell>
@@ -209,8 +210,8 @@ export default function Sops() {
       {viewing && (
         <Modal title={viewing.title} onClose={() => setViewing(null)} wide>
           <p className="mb-3 text-xs text-muted-foreground">
-            <span className="font-mono tabular-nums">{viewing.chunks.length}</span> chunks —
-            extracted text as Establo retrieves it
+            <span className="font-mono tabular-nums">{viewing.chunks.length}</span>{' '}
+            {t.sops.chunksExtracted}
           </p>
           <div className="max-h-[60vh] space-y-3 overflow-y-auto">
             {viewing.chunks.map((c) => (
@@ -218,7 +219,7 @@ export default function Sops() {
                 <div className="mb-1 text-xs font-medium text-primary">
                   {c.headingPath}{' '}
                   <span className="font-mono font-normal tabular-nums text-muted-foreground">
-                    · ~{c.tokenCount} tokens
+                    {t.sops.tokensApprox(c.tokenCount)}
                   </span>
                 </div>
                 <pre className="whitespace-pre-wrap font-sans text-xs text-foreground">{c.content}</pre>

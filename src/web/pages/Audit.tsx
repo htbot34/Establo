@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
-import { api, fmtDate, fmtDateTime, IS_DEMO } from '../api';
+import { api, IS_DEMO } from '../api';
 import {
   Button,
   Card,
@@ -10,8 +10,9 @@ import {
   Label,
   PageHeader,
   Spinner,
-  statusBadge,
+  StatusBadge,
 } from '../components';
+import { useFmt, useT } from '../i18n';
 import { DataTable } from '../ui/data-table';
 
 interface AuditExportRow {
@@ -30,88 +31,93 @@ function isoDaysAgo(days: number): string {
   return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
 }
 
-const columns: ColumnDef<AuditExportRow>[] = [
-  {
-    accessorKey: 'periodStart',
-    header: 'Period',
-    cell: ({ row }) => (
-      <span className="font-mono tabular-nums text-foreground">
-        {fmtDate(row.original.periodStart)} – {fmtDate(row.original.periodEnd)}
-      </span>
-    ),
-  },
-  {
-    accessorKey: 'createdAt',
-    header: 'Requested',
-    cell: ({ row }) => (
-      <span className="font-mono tabular-nums text-muted-foreground">
-        {fmtDateTime(row.original.createdAt)}
-      </span>
-    ),
-  },
-  {
-    accessorKey: 'status',
-    header: 'Status',
-    cell: ({ row }) => (
-      <div>
-        {statusBadge(row.original.status)}
-        {row.original.errorText && (
-          <div className="mt-1 text-xs text-destructive">{row.original.errorText}</div>
-        )}
-      </div>
-    ),
-  },
-  {
-    id: 'downloads',
-    header: 'Downloads',
-    enableSorting: false,
-    meta: { align: 'right' },
-    cell: ({ row }) => {
-      const r = row.original;
-      if (r.status !== 'ready')
-        return <span className="font-mono text-xs text-muted-foreground">—</span>;
-      return (
-        <div className="flex justify-end gap-3 text-xs font-medium">
-          {r.letterUrl && (
-            <a
-              className="text-primary hover:underline"
-              href={IS_DEMO ? r.letterUrl : `${r.letterUrl}?download`}
-            >
-              Letter PDF
-            </a>
-          )}
-          {r.csvUrl && (
-            <a
-              className="text-primary hover:underline"
-              href={IS_DEMO ? r.csvUrl : `${r.csvUrl}?download`}
-              download={IS_DEMO ? 'training-events.csv' : undefined}
-            >
-              CSV
-            </a>
-          )}
-          {r.downloadUrl && (
-            <a
-              className="text-primary hover:underline"
-              href={IS_DEMO ? r.downloadUrl : `${r.downloadUrl}?download`}
-            >
-              Full pack (zip)
-            </a>
-          )}
-          {IS_DEMO && !r.letterUrl && (
-            <span className="text-muted-foreground">PDF/zip: backend only</span>
-          )}
-        </div>
-      );
-    },
-  },
-];
-
 export default function Audit() {
   const [rows, setRows] = useState<AuditExportRow[] | null>(null);
   const [start, setStart] = useState(isoDaysAgo(30));
   const [end, setEnd] = useState(isoDaysAgo(0));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const t = useT();
+  const { fmtDate, fmtDateTime } = useFmt();
+
+  const columns = useMemo<ColumnDef<AuditExportRow>[]>(
+    () => [
+      {
+        accessorKey: 'periodStart',
+        header: t.audit.colPeriod,
+        cell: ({ row }) => (
+          <span className="font-mono tabular-nums text-foreground">
+            {fmtDate(row.original.periodStart)} – {fmtDate(row.original.periodEnd)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'createdAt',
+        header: t.audit.colRequested,
+        cell: ({ row }) => (
+          <span className="font-mono tabular-nums text-muted-foreground">
+            {fmtDateTime(row.original.createdAt)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'status',
+        header: t.audit.colStatus,
+        cell: ({ row }) => (
+          <div>
+            <StatusBadge status={row.original.status} />
+            {row.original.errorText && (
+              <div className="mt-1 text-xs text-destructive">{row.original.errorText}</div>
+            )}
+          </div>
+        ),
+      },
+      {
+        id: 'downloads',
+        header: t.audit.colDownloads,
+        enableSorting: false,
+        meta: { align: 'right' },
+        cell: ({ row }) => {
+          const r = row.original;
+          if (r.status !== 'ready')
+            return <span className="font-mono text-xs text-muted-foreground">—</span>;
+          return (
+            <div className="flex justify-end gap-3 text-xs font-medium">
+              {r.letterUrl && (
+                <a
+                  className="text-primary hover:underline"
+                  href={IS_DEMO ? r.letterUrl : `${r.letterUrl}?download`}
+                >
+                  {t.audit.letterPdf}
+                </a>
+              )}
+              {r.csvUrl && (
+                <a
+                  className="text-primary hover:underline"
+                  href={IS_DEMO ? r.csvUrl : `${r.csvUrl}?download`}
+                  download={IS_DEMO ? 'training-events.csv' : undefined}
+                >
+                  {t.audit.csv}
+                </a>
+              )}
+              {r.downloadUrl && (
+                <a
+                  className="text-primary hover:underline"
+                  href={IS_DEMO ? r.downloadUrl : `${r.downloadUrl}?download`}
+                >
+                  {t.audit.fullPack}
+                </a>
+              )}
+              {IS_DEMO && !r.letterUrl && (
+                <span className="text-muted-foreground">{t.audit.pdfBackendOnly}</span>
+              )}
+            </div>
+          );
+        },
+      },
+    ],
+    [t, fmtDate, fmtDateTime],
+  );
 
   const load = useCallback(async () => {
     setRows(await api<AuditExportRow[]>('/api/audit/exports'));
@@ -123,8 +129,8 @@ export default function Audit() {
   // Poll while anything is generating.
   useEffect(() => {
     if (!rows?.some((r) => r.status === 'pending' || r.status === 'processing')) return;
-    const t = setInterval(() => void load(), 2000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => void load(), 2000);
+    return () => clearInterval(timer);
   }, [rows, load]);
 
   async function generate() {
@@ -142,37 +148,27 @@ export default function Audit() {
 
   return (
     <div>
-      <PageHeader
-        title="Audit & Exports"
-        subtitle="One click produces the documentation pack for a FARM evaluation or investigation"
-      />
+      <PageHeader title={t.audit.title} subtitle={t.audit.subtitle} />
       <ErrorNote error={error} />
 
       <Card className="mb-5 p-5">
-        <h2 className="mb-3 text-sm font-medium text-foreground">Generate an audit pack</h2>
+        <h2 className="mb-3 text-sm font-medium text-foreground">{t.audit.generateTitle}</h2>
         <div className="flex flex-wrap items-end gap-3">
           <div>
-            <Label>From</Label>
+            <Label>{t.audit.from}</Label>
             <Input type="date" value={start} onChange={(e) => setStart(e.target.value)} />
           </div>
           <div>
-            <Label>To</Label>
+            <Label>{t.audit.to}</Label>
             <Input type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
           </div>
           <Button onClick={() => void generate()} disabled={busy}>
-            {busy ? 'Starting…' : 'Generate audit pack'}
+            {busy ? t.audit.starting : t.audit.generate}
           </Button>
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          The pack contains: a formal training-documentation letter (PDF) listing each employee,
-          their training dates, topics and check results · the full training-events CSV ·
-          per-worker transcript PDFs — all zipped together.
-        </p>
+        <p className="mt-3 text-xs text-muted-foreground">{t.audit.packContains}</p>
         {IS_DEMO && (
-          <p className="mt-2 text-xs font-medium text-warning">
-            Hosted demo: the CSV is generated right here in your browser; the letter PDF and
-            transcripts zip are produced by the real backend (run locally to see them).
-          </p>
+          <p className="mt-2 text-xs font-medium text-warning">{t.audit.demoNote}</p>
         )}
       </Card>
 
@@ -182,7 +178,7 @@ export default function Audit() {
         </Card>
       ) : rows.length === 0 ? (
         <Card>
-          <EmptyState title="No audit packs yet" hint="Generate your first one above." />
+          <EmptyState title={t.audit.emptyTitle} hint={t.audit.emptyHint} />
         </Card>
       ) : (
         <Card className="overflow-hidden">

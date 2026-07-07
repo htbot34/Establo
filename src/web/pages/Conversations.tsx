@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ClipboardList, Mic, Volume2 } from 'lucide-react';
 import { type ColumnDef } from '@tanstack/react-table';
-import { api, fmtDateTime, IS_DEMO, timeAgo } from '../api';
-import { Badge, Button, Card, EmptyState, PageHeader, Spinner, statusBadge } from '../components';
+import { api, IS_DEMO } from '../api';
+import { Badge, Button, Card, EmptyState, PageHeader, Spinner, StatusBadge } from '../components';
+import { useFmt, useT } from '../i18n';
 import { DataTable } from '../ui/data-table';
 import { videoFromText } from '../../server/services/video';
 
@@ -40,6 +41,8 @@ export default function Conversations() {
   const [selected, setSelected] = useState<Conv | null>(null);
   const [msgs, setMsgs] = useState<Msg[] | null>(null);
   const [escalations, setEscalations] = useState<Escalation[] | null>(null);
+  const t = useT();
+  const { fmtDateTime, timeAgo } = useFmt();
 
   useEffect(() => {
     void api<Conv[]>('/api/conversations').then(setConvs);
@@ -70,14 +73,14 @@ export default function Conversations() {
     () => [
       {
         accessorKey: 'workerName',
-        header: 'Worker',
+        header: t.conversations.colWorker,
         cell: ({ row }) => (
           <span className="font-medium text-foreground">{row.original.workerName}</span>
         ),
       },
       {
         accessorKey: 'questionText',
-        header: 'Question',
+        header: t.conversations.colQuestion,
         enableSorting: false,
         cell: ({ row }) => (
           <span className="block max-w-md truncate text-foreground" title={row.original.questionText}>
@@ -87,20 +90,20 @@ export default function Conversations() {
       },
       {
         accessorKey: 'reason',
-        header: 'Reason',
+        header: t.conversations.colReason,
         cell: ({ row }) => <Badge color="stone">{row.original.reason}</Badge>,
       },
       {
         accessorKey: 'createdAt',
-        header: 'Raised',
+        header: t.conversations.colRaised,
         cell: ({ row }) => (
           <span className="text-muted-foreground">{timeAgo(row.original.createdAt)}</span>
         ),
       },
       {
         accessorKey: 'status',
-        header: 'Status',
-        cell: ({ row }) => statusBadge(row.original.status),
+        header: t.conversations.colStatus,
+        cell: ({ row }) => <StatusBadge status={row.original.status} />,
       },
       {
         id: 'action',
@@ -110,30 +113,32 @@ export default function Conversations() {
         cell: ({ row }) =>
           row.original.status === 'open' ? (
             <Button variant="secondary" onClick={() => void resolve(row.original.id)}>
-              Mark resolved
+              {t.conversations.markResolved}
             </Button>
           ) : null,
       },
     ],
-    [resolve],
+    [resolve, t, timeAgo],
   );
+
+  const tabs = [
+    { key: 'conversations' as const, label: t.conversations.tabConversations },
+    { key: 'escalations' as const, label: t.conversations.tabEscalations },
+  ];
 
   return (
     <div>
-      <PageHeader
-        title="Conversations"
-        subtitle="Read-only view of worker chats, plus the escalations inbox"
-      />
+      <PageHeader title={t.conversations.title} subtitle={t.conversations.subtitle} />
       <div className="mb-4 flex w-fit gap-1 rounded-md bg-muted p-1 text-sm font-medium">
-        {(['conversations', 'escalations'] as const).map((t) => (
+        {tabs.map(({ key, label }) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`rounded-sm px-4 py-1.5 capitalize transition-colors ${
-              tab === t ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground'
+            key={key}
+            onClick={() => setTab(key)}
+            className={`rounded-sm px-4 py-1.5 transition-colors ${
+              tab === key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground'
             }`}
           >
-            {t}
+            {label}
           </button>
         ))}
       </div>
@@ -144,7 +149,7 @@ export default function Conversations() {
             {!convs ? (
               <Spinner />
             ) : convs.length === 0 ? (
-              <EmptyState title="No conversations yet" />
+              <EmptyState title={t.conversations.noConversations} />
             ) : (
               <ul className="divide-y divide-border">
                 {convs.map((c) => (
@@ -162,7 +167,7 @@ export default function Conversations() {
                         </span>
                       </div>
                       <div className="font-mono text-xs tabular-nums text-muted-foreground">
-                        {c.messageCount} messages
+                        {t.conversations.messagesCount(c.messageCount)}
                       </div>
                     </button>
                   </li>
@@ -172,7 +177,7 @@ export default function Conversations() {
           </Card>
           <Card className="col-span-3 max-h-[70vh] overflow-y-auto bg-muted/30">
             {!selected ? (
-              <EmptyState title="Pick a conversation" />
+              <EmptyState title={t.conversations.pickConversation} />
             ) : !msgs ? (
               <Spinner />
             ) : (
@@ -188,12 +193,13 @@ export default function Conversations() {
                     >
                       {m.type === 'voice' && m.direction === 'inbound' && (
                         <div className="mb-1 inline-flex items-center gap-1 text-xs opacity-70">
-                          <Mic className="size-3" aria-hidden="true" /> voice note (transcript)
+                          <Mic className="size-3" aria-hidden="true" /> {t.conversations.voiceNote}
                         </div>
                       )}
                       {m.type === 'template' && (
                         <div className="mb-1 inline-flex items-center gap-1 text-xs opacity-70">
-                          <ClipboardList className="size-3" aria-hidden="true" /> template
+                          <ClipboardList className="size-3" aria-hidden="true" />{' '}
+                          {t.conversations.template}
                         </div>
                       )}
                       <p className="whitespace-pre-wrap">{m.bodyText ?? m.transcriptText ?? ''}</p>
@@ -216,8 +222,8 @@ export default function Conversations() {
                       {m.audioReplyUrl &&
                         (IS_DEMO ? (
                           <div className="mt-1.5 inline-flex w-fit items-center gap-1 rounded-full bg-black/10 px-3 py-1 text-xs opacity-90">
-                            <Volume2 className="size-3" aria-hidden="true" /> respuesta de voz —
-                            silenciada en este demo (el sistema real envía audio TTS)
+                            <Volume2 className="size-3" aria-hidden="true" />{' '}
+                            {t.conversations.demoVoicePill}
                           </div>
                         ) : (
                           <audio controls src={m.audioReplyUrl} className="mt-1.5 h-9 w-52" />
@@ -243,8 +249,8 @@ export default function Conversations() {
       ) : escalations.length === 0 ? (
         <Card>
           <EmptyState
-            title="No escalations"
-            hint="When Establo can't answer from your SOPs, the gap shows up here."
+            title={t.conversations.noEscalationsTitle}
+            hint={t.conversations.noEscalationsHint}
           />
         </Card>
       ) : (

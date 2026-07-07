@@ -2,6 +2,7 @@ import * as React from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { useT } from '../i18n/context';
 
 export const Dialog = DialogPrimitive.Root;
 export const DialogTrigger = DialogPrimitive.Trigger;
@@ -23,6 +24,19 @@ export const DialogOverlay = React.forwardRef<
 ));
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
+/** Split out so the close label can read the locale (DialogContent has an expression body). */
+function DialogCloseButton() {
+  const t = useT();
+  return (
+    <DialogPrimitive.Close
+      aria-label={t.common.close}
+      className="absolute right-4 top-4 rounded-sm p-0.5 text-muted-foreground opacity-80 transition-opacity hover:bg-accent hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring disabled:pointer-events-none"
+    >
+      <X className="size-4" aria-hidden="true" />
+    </DialogPrimitive.Close>
+  );
+}
+
 export const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { hideClose?: boolean }
@@ -38,14 +52,7 @@ export const DialogContent = React.forwardRef<
       {...props}
     >
       {children}
-      {!hideClose && (
-        <DialogPrimitive.Close
-          aria-label="Close"
-          className="absolute right-4 top-4 rounded-sm p-0.5 text-muted-foreground opacity-80 transition-opacity hover:bg-accent hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring disabled:pointer-events-none"
-        >
-          <X className="size-4" aria-hidden="true" />
-        </DialogPrimitive.Close>
-      )}
+      {!hideClose && <DialogCloseButton />}
     </DialogPrimitive.Content>
   </DialogPortal>
 ));
